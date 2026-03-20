@@ -46,7 +46,7 @@ Respond with a JSON object only, no markdown, in this exact shape:
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.1,       // low temp = consistent, factual output
-          maxOutputTokens: 300,
+          responseMimeType: "application/json",
         },
       }),
     });
