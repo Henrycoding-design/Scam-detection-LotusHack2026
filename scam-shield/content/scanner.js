@@ -148,6 +148,7 @@ const ScamShieldScanner = (() => {
           <p style="color: #ccc; word-break: break-all; font-size: 0.85rem;">
             ${href}
           </p>
+          <p id="ss-reason" style="color:#aaa; font-size:0.9rem; margin-top:8px;"></p>
           <div style="display:flex; gap: 12px; margin-top: 24px;">
             <button id="ss-go-back" style="
               flex:1; padding: 12px; background: #e63946;
@@ -187,6 +188,19 @@ const ScamShieldScanner = (() => {
       localRiskMap = Object.assign(localRiskMap, message.riskMap);
       // Also save to session storage for other components if needed
       chrome.storage.session.set({ riskMap: localRiskMap });
+    }
+
+    // NEW: update the overlay if it's already showing
+    if (message.type === "PAGE_EXPLANATION") {
+      const overlay = document.getElementById("scamshield-overlay");
+      if (overlay && message.explanation) {
+        const reasonEl = overlay.querySelector("#ss-reason");
+        if (reasonEl) {
+          reasonEl.textContent = message.explanation.reason;
+        }
+      }
+      // Also store for side panel
+      chrome.storage.session.set({ pageExplanation: message.explanation });
     }
   });
 
