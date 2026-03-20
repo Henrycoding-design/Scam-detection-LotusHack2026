@@ -1,0 +1,8 @@
+{
+  "name": "scam-shield",
+  "version": "0.1.0",
+  "description": "Real-time scam detection for every page you visit",
+  "scripts": {
+    "build": "echo 'No build step needed for Step 1'"
+  }
+}
