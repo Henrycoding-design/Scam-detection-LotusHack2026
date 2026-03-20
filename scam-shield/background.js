@@ -17,7 +17,7 @@ async function handleScan(context, tabId) {
   // STUB for Step 1 — in Step 2 this calls your scoring API
   const mockRiskMap = {};
   context.links.forEach((link) => {
-    mockRiskMap[link.href] = Math.floor(Math.random() * 100); // random for now
+    mockRiskMap[link.href] = 95; // force high risk for interception testing
   });
 
   // Send scores back to the content script
