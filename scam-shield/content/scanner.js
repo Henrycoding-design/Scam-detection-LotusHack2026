@@ -177,12 +177,8 @@ const ScamShieldScanner = (() => {
   // ── 5. MESSAGE BUS ────────────────────────────────────────────────
   function sendToBackground(message) {
     try {
-      chrome.runtime.sendMessage(message).catch((err) => {
+      chrome.runtime.sendMessage(message).catch(() => {
         // Background service worker may have gone idle — that's fine
-        // Ignore "Extension context invalidated" errors
-        if (err && err.message && !err.message.includes("Extension context invalidated")) {
-          console.warn("[ScamShield] Message error:", err);
-        }
       });
     } catch (err) {
       // Catch synchronous errors if the extension was just reloaded/uninstalled

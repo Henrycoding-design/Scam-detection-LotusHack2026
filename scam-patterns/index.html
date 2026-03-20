@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scam Pattern Demo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Scam Pattern Demo (Easy → High Risk)</h1>
+      <p>Use this page to inspect patterns from mild suspicious to high-risk scam behavior.</p>
+    </header>
+
+    <main>
+      <section class="risk-block low">
+        <h2>Low Risk (Just Caution)</h2>
+        <ul>
+          <li>Generic link with unusual domain: <a href="http://example-scam-tester.com" target="_blank" rel="noreferrer noopener">http://example-scam-tester.com</a></li>
+          <li>Cold email style content: "act now" + tight deadline language.</li>
+          <li>Unverified social media share text e.g. "You won't believe this find!"</li>
+        </ul>
+      </section>
+
+      <section class="risk-block medium">
+        <h2>Medium Risk (Suspicious)</h2>
+        <ul>
+          <li>Link with mismatched display text: <a href="http://malicious-site.io" target="_blank" rel="noreferrer noopener">https://secure-login-bank.com</a></li>
+          <li>Keyword signs: "confirm account", "urgent action required", "vouchers".</li>
+          <li>Fake support contact text: "Reply with your password" (never share credentials).</li>
+          <li>Obfuscated or shortened URL: <a href="http://bit.ly/2XxF2G" target="_blank" rel="noreferrer noopener">bit.ly/2XxF2G</a></li>
+        </ul>
+      </section>
+
+      <section class="risk-block high">
+        <h2>High Risk (Strong Scam Indicators)</h2>
+        <ul>
+          <li>Pretends to be from a bank/government and asks for immediate payment</li>
+          <li>Attachment/fake invoice prompt: "download your refund form"</li>
+          <li>Threat language: "Your account will be closed in 1 hour"</li>
+          <li>Phishing link with brand spoofing: <a href="http://apple-secure-login.com" target="_blank" rel="noreferrer noopener">apple-secure-login.com</a></li>
+        </ul>
+      </section>
+
+      <section class="risk-block critical">
+        <h2>Critical Risk (Confirmed Scam Pattern)</h2>
+        <ul>
+          <li>Payment request to cryptocurrency wallet with no invoice control</li>
+          <li>Impersonating trusted contact + urgent request to send money</li>
+          <li>One-time code asks via chat/email for verification (social engineering)</li>
+          <li>Fake tax or refund notice with immediate "confirm identity" form</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <p>Created for testing scam-detection visuals. Real detection needs API scoring and feature extraction.</p>
+    </footer>
+  </body>
+</html>

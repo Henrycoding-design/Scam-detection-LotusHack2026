@@ -4,7 +4,7 @@
 // Anyone can inspect the extension files and steal the key.
 // We are doing this TEMPORARILY for Step 2 testing. 
 // In Step 3, this entire file will be moved to a secure backend server.
-const GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"; 
+const GEMINI_API_KEY = "AIzaSyBU6QgPXBpGkxGzTye-rWvk7_BMDdG8fhA"; 
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 export async function getGeminiExplanation({ url, score, signals, visibleText }) {
