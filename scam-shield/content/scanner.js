@@ -1,6 +1,7 @@
 // content/scanner.js
 
 const ScamShieldScanner = (() => {
+  let localRiskMap = {};
 
   // ── 1. PAGE SNAPSHOT ──────────────────────────────────────────────
   function extractPageContext() {
@@ -109,15 +110,13 @@ const ScamShieldScanner = (() => {
         const href = anchor.href;
         if (!href.startsWith("http")) return;
 
-        // Only intercept if we already have a high risk score stored
-        chrome.storage.session.get(["riskMap"], (result) => {
-          const riskMap = result.riskMap || {};
-          const score = riskMap[href];
-          if (score >= 70) {
-            e.preventDefault();
-            showWarningOverlay(anchor, href, score);
-          }
-        });
+        // Check the local risk map synchronously
+        const score = localRiskMap[href];
+        if (score >= 70) {
+          e.preventDefault();
+          e.stopPropagation(); // Stop other click handlers
+          showWarningOverlay(anchor, href, score);
+        }
       },
       true // capture phase — fires before the page's own handlers
     );
@@ -184,7 +183,10 @@ const ScamShieldScanner = (() => {
   // Listen for risk scores coming back from the background
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === "RISK_SCORES") {
-      chrome.storage.session.set({ riskMap: message.riskMap });
+      // Update our local synchronous map
+      localRiskMap = Object.assign(localRiskMap, message.riskMap);
+      // Also save to session storage for other components if needed
+      chrome.storage.session.set({ riskMap: localRiskMap });
     }
   });
 
