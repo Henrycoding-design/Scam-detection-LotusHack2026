@@ -1,0 +1,205 @@
+<!--
+Scenario: Fake Microsoft or Apple tech support warning
+Signals: urgency_language, sensitive_data_request, no_meta_description, offsite_login_link, og_domain_mismatch
+Expected minimum score: 75+ when served from localhost; 80+ is plausible from file:// because of added meta mismatch
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:site_name" content="Microsoft">
+  <meta property="og:url" content="http://windows-defender.live-alert-center.co/repair">
+  <title>Urgent Security Alert</title>
+  <style>
+    :root {
+      --red: #f33232;
+      --dark: #170b0b;
+      --panel: #2a1212;
+      --line: #5c2020;
+      --text: #fff1f1;
+      --amber: #ffd37a;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(243, 50, 50, 0.18), transparent 34%),
+        linear-gradient(180deg, #110606 0%, #1b0909 100%);
+      color: var(--text);
+    }
+
+    .banner {
+      background: #ffe46a;
+      color: #2b2200;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      padding: 10px 14px;
+      border-bottom: 1px solid #d7b700;
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 24px auto 40px;
+      padding: 0 16px;
+    }
+
+    .window {
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
+      background: linear-gradient(180deg, rgba(42,18,18,0.98), rgba(20,9,9,0.99));
+    }
+
+    .chrome {
+      background: #2b2020;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #7d5050;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 0;
+    }
+
+    .main, .side {
+      padding: 32px;
+    }
+
+    .main {
+      border-right: 1px solid rgba(255,255,255,0.07);
+      background: linear-gradient(180deg, rgba(243,50,50,0.06), transparent 44%);
+    }
+
+    .alert {
+      display: inline-block;
+      margin-bottom: 16px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(243,50,50,0.2);
+      color: #ffbcbc;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: 46px;
+      line-height: 1.04;
+    }
+
+    p {
+      margin: 0 0 14px;
+      font-size: 16px;
+      line-height: 1.7;
+      color: #f9dede;
+    }
+
+    .callout {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-left: 6px solid var(--red);
+      border-radius: 18px;
+      padding: 18px;
+      margin-top: 22px;
+    }
+
+    .phone {
+      color: var(--amber);
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      margin-top: 12px;
+    }
+
+    .side-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 22px;
+    }
+
+    .side-card h2 {
+      margin: 0 0 14px;
+      font-size: 22px;
+      color: #ffd3d3;
+    }
+
+    .status {
+      margin: 12px 0 18px;
+      padding: 14px;
+      border-radius: 14px;
+      background: rgba(243,50,50,0.12);
+      color: #ffc8c8;
+      font-weight: 700;
+    }
+
+    .cta {
+      display: inline-block;
+      width: 100%;
+      padding: 15px 18px;
+      text-align: center;
+      text-decoration: none;
+      color: #fff;
+      font-weight: 700;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #f33232, #bf2020);
+    }
+
+    @media (max-width: 860px) {
+      .content { grid-template-columns: 1fr; }
+      .main { border-right: 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
+      h1 { font-size: 36px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="banner">SCAMSHIELD TEST PAGE — Safe for testing. No real data is collected.</div>
+  <div class="wrap">
+    <div class="window">
+      <div class="chrome">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      </div>
+      <div class="content">
+        <section class="main">
+          <div class="alert">Urgent Browser Warning</div>
+          <h1>Security alert: immediate action needed</h1>
+          <p>Access to this computer may be blocked because suspicious files and remote intrusion activity were detected. Urgent remediation is required to stop data loss and protect your synced devices.</p>
+          <p>Do not restart or close this page. Call now and follow the recovery instructions to verify your account, reconnect cloud services, and reauthorize administrator access.</p>
+          <div class="callout">
+            <strong>Threat summary</strong>
+            <p>Your Apple ID, Microsoft profile, and browser payment credentials may remain exposed until you enter your password and confirm the repair session.</p>
+            <div class="phone">1-800-555-0147</div>
+          </div>
+        </section>
+        <aside class="side">
+          <div class="side-card">
+            <h2>Device Protection Center</h2>
+            <div class="status">Risk level: critical</div>
+            <p>Session timeout in 05:00. Login is required to fix your account and stop the malware lock.</p>
+            <a class="cta" href="http://support-login.device-recovery-center.help/repair">Login to fix your account</a>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,204 @@
+<!--
+Scenario: Fake bank security alert demanding immediate action
+Signals: urgency_language, sensitive_data_request, no_meta_description, offsite_login_link, og_domain_mismatch, high_external_link_ratio
+Expected minimum score: 85+ when served from localhost; text/meta signals still trigger from file://
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:site_name" content="North Harbor Bank">
+  <meta property="og:url" content="http://account-center.secure-message-mail.net/alert-review">
+  <title>Security Alert: Account Suspended</title>
+  <style>
+    :root {
+      --navy: #12395a;
+      --blue: #235f95;
+      --ice: #eef4f9;
+      --steel: #6b7a8a;
+      --gold: #f1c04c;
+      --danger: #b91c1c;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(180deg, #dfe8f1 0%, #f7f9fc 45%, #edf3f8 100%);
+      color: #14324a;
+    }
+
+    .banner {
+      background: #ffe46a;
+      color: #2b2200;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      padding: 10px 14px;
+      border-bottom: 1px solid #d7b700;
+    }
+
+    .frame {
+      max-width: 760px;
+      margin: 28px auto 40px;
+      padding: 0 16px;
+    }
+
+    .mail {
+      background: #fff;
+      border: 1px solid #d6dde5;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(18, 57, 90, 0.16);
+    }
+
+    .mail-header {
+      background: linear-gradient(135deg, var(--navy), var(--blue));
+      color: #fff;
+      padding: 26px 30px;
+    }
+
+    .brand {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .subhead {
+      margin-top: 10px;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.82);
+    }
+
+    .content {
+      padding: 30px;
+      background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+    }
+
+    .alert-box {
+      border-left: 6px solid var(--danger);
+      background: #fff3f3;
+      color: #7a1212;
+      padding: 18px 20px;
+      border-radius: 10px;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 30px;
+      line-height: 1.15;
+    }
+
+    p {
+      margin: 0 0 14px;
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    .details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin: 22px 0;
+    }
+
+    .detail-card {
+      background: var(--ice);
+      border: 1px solid #d9e4ef;
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    .detail-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--steel);
+      margin-bottom: 8px;
+    }
+
+    .detail-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--navy);
+    }
+
+    .cta {
+      display: inline-block;
+      margin: 10px 0 18px;
+      padding: 16px 28px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #1d72b8, #114f82);
+      color: #fff;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 14px 28px rgba(24, 92, 147, 0.22);
+    }
+
+    .fine-print {
+      font-size: 13px;
+      color: #5f6d7b;
+      border-top: 1px solid #e3eaf0;
+      padding-top: 18px;
+      margin-top: 8px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      margin-top: 16px;
+    }
+
+    .footer-links a {
+      color: #235f95;
+      text-decoration: none;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="banner">SCAMSHIELD TEST PAGE — Safe for testing. No real data is collected.</div>
+  <div class="frame">
+    <div class="mail">
+      <div class="mail-header">
+        <div class="brand">North Harbor Bank</div>
+        <div class="subhead">Fraud Prevention and Digital Security Center</div>
+      </div>
+      <div class="content">
+        <div class="alert-box">
+          Security alert: unusual activity was detected on your online banking profile, and your account suspended status is now active.
+        </div>
+        <h1>Verify your account immediately</h1>
+        <p>Dear customer, our fraud team detected unusual activity from a new device and placed a temporary hold on online access. To avoid service interruption, please confirm your identity and verify your account today.</p>
+        <p>Your account will remain restricted until you enter your password and complete the secure review process. Immediate action is required to prevent further limitations on transfers and debit card access.</p>
+        <div class="details">
+          <div class="detail-card">
+            <div class="detail-label">Case Number</div>
+            <div class="detail-value">NHB-482913</div>
+          </div>
+          <div class="detail-card">
+            <div class="detail-label">Review Window</div>
+            <div class="detail-value">Limited time: 30 minutes</div>
+          </div>
+          <div class="detail-card">
+            <div class="detail-label">Access State</div>
+            <div class="detail-value">Account Suspended</div>
+          </div>
+        </div>
+        <a class="cta" href="http://secure-login.fake-bank-verify.xyz/auth">Verify Now</a>
+        <p class="fine-print">If this request was not completed promptly, online bill pay, Zelle access, and merchant authorization may remain unavailable until a manual review is completed.</p>
+        <div class="footer-links">
+          <a href="http://fraud-center.nhb-status-help.net/check">Fraud Review Center</a>
+          <a href="http://password-support.secure-nhb-mail.net/reset">Password Reset Support</a>
+          <a href="http://verification-messages.nhb-alerts.net/confirm">Verify Message History</a>
+          <a href="http://account-security.nhb-mail-check.net/login-help">Login Help</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
