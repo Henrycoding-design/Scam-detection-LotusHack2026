@@ -1,35 +1,36 @@
-// background.js
+chrome.storage.session
+  .setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" })
+  .catch(() => {});
 
-// Allow content scripts to access session storage
-chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.type === "PAGE_LOADED" || message.type === "PAGE_UPDATED") {
     handleScan(message.context, sender.tab?.id);
   }
 });
 
 async function handleScan(context, tabId) {
-  console.log("[ScamShield] Scanning:", context.url);
-  console.log(`  → ${context.links.length} links found`);
-  console.log(`  → ${context.visibleText.length} chars of text`);
+  if (!context || typeof tabId !== "number") {
+    return;
+  }
 
-  // STUB for Step 1 — in Step 2 this calls your scoring API
+  console.log("[ScamShield] Scanning:", context.url);
+  console.log(`  -> ${context.links.length} links found`);
+  console.log(`  -> ${context.visibleText.length} chars of text`);
+
   const mockRiskMap = {};
   context.links.forEach((link) => {
-    mockRiskMap[link.href] = Math.floor(Math.random() * 100); // random for now
+    mockRiskMap[link.href] = Math.floor(Math.random() * 100);
   });
 
-  // Send scores back to the content script
-  if (tabId) {
-    chrome.tabs.sendMessage(tabId, {
+  chrome.tabs
+    .sendMessage(tabId, {
       type: "RISK_SCORES",
       riskMap: mockRiskMap,
-    }).catch(() => {});
-  }
+      pageUrl: context.url,
+    })
+    .catch(() => {});
 }
 
-// Open side panel when extension icon is clicked
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch(() => {});

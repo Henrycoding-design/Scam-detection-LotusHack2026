@@ -1,8 +1,12 @@
-// content/scanner.js
-
 const ScamShieldScanner = (() => {
+  const OVERLAY_ID = "scamshield-overlay";
+  const RISK_THRESHOLD = 70;
+  const MAX_VISIBLE_TEXT_LENGTH = 3000;
+  const MAX_LINKS = 80;
+  const STORAGE_KEY_PREFIX = "riskMap:";
+  let debounceTimer = null;
+  let currentRiskMap = {};
 
-  // ── 1. PAGE SNAPSHOT ──────────────────────────────────────────────
   function extractPageContext() {
     return {
       url: window.location.href,
@@ -27,17 +31,20 @@ const ScamShieldScanner = (() => {
   function extractLinks() {
     return Array.from(document.querySelectorAll("a[href]"))
       .map((el) => ({
-        href: el.href,                          // resolved absolute URL
+        href: el.href,
         text: el.innerText.trim().slice(0, 120),
         isVisible: isElementVisible(el),
         hasLoginKeyword: /log.?in|sign.?in|password|verify/i.test(el.innerText),
       }))
-      .filter((l) => l.href.startsWith("http")) // skip mailto:, #anchors, etc.
-      .slice(0, 80);                             // cap at 80 links to keep payload lean
+      .filter((link) => link.href.startsWith("http"))
+      .slice(0, MAX_LINKS);
   }
 
   function extractVisibleText() {
-    // Walk the body, grab text nodes that are actually rendered
+    if (!document.body) {
+      return "";
+    }
+
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_TEXT,
@@ -56,10 +63,16 @@ const ScamShieldScanner = (() => {
     );
 
     const chunks = [];
+    let totalLength = 0;
     let node;
-    while ((node = walker.nextNode()) && chunks.join(" ").length < 3000) {
-      chunks.push(node.textContent.trim());
+    while ((node = walker.nextNode()) && totalLength < MAX_VISIBLE_TEXT_LENGTH) {
+      const text = node.textContent.trim();
+      const remaining = MAX_VISIBLE_TEXT_LENGTH - totalLength;
+      const nextChunk = text.slice(0, remaining);
+      chunks.push(nextChunk);
+      totalLength += nextChunk.length + 1;
     }
+
     return chunks.join(" ");
   }
 
@@ -74,12 +87,21 @@ const ScamShieldScanner = (() => {
     );
   }
 
-  // ── 2. MUTATIONOBSERVER — watch for dynamic content ────────────────
-  let debounceTimer = null;
+  function getStorageKey(pageUrl = window.location.href) {
+    return `${STORAGE_KEY_PREFIX}${pageUrl}`;
+  }
+
+  function persistRiskMap(riskMap, pageUrl) {
+    const storageKey = getStorageKey(pageUrl);
+    chrome.storage.session.set({ [storageKey]: riskMap }).catch(() => {});
+  }
 
   function startMutationWatcher() {
+    if (!document.body) {
+      return;
+    }
+
     const observer = new MutationObserver((mutations) => {
-      // Debounce: don't fire on every tiny DOM tweak (e.g. ad rotation)
       const meaningful = mutations.some(
         (m) => m.addedNodes.length > 0 || m.type === "childList"
       );
@@ -89,7 +111,7 @@ const ScamShieldScanner = (() => {
       debounceTimer = setTimeout(() => {
         const context = extractPageContext();
         sendToBackground({ type: "PAGE_UPDATED", context });
-      }, 1500); // wait 1.5s after last mutation before re-scanning
+      }, 1500);
     });
 
     observer.observe(document.body, {
@@ -98,38 +120,50 @@ const ScamShieldScanner = (() => {
     });
   }
 
-  // ── 3. CLICK INTERCEPTION — pause before risky navigation ─────────
+  function findAnchorFromEvent(event) {
+    const eventTarget = event.target;
+    if (eventTarget instanceof Element) {
+      return eventTarget.closest("a[href]");
+    }
+
+    return null;
+  }
+
   function attachClickInterceptor() {
     document.addEventListener(
       "click",
       (e) => {
-        const anchor = e.target.closest("a[href]");
+        const anchor = findAnchorFromEvent(e);
         if (!anchor) return;
 
         const href = anchor.href;
-        if (!href.startsWith("http")) return;
+        const isModifiedClick =
+          e.defaultPrevented ||
+          e.button !== 0 ||
+          e.metaKey ||
+          e.ctrlKey ||
+          e.shiftKey ||
+          e.altKey;
+        if (!href.startsWith("http") || isModifiedClick || anchor.target === "_blank") {
+          return;
+        }
 
-        // Only intercept if we already have a high risk score stored
-        chrome.storage.session.get(["riskMap"], (result) => {
-          const riskMap = result.riskMap || {};
-          const score = riskMap[href];
-          if (score >= 70) {
-            e.preventDefault();
-            showWarningOverlay(anchor, href, score);
-          }
-        });
+        const score = currentRiskMap[href];
+        if (score >= RISK_THRESHOLD) {
+          e.preventDefault();
+          e.stopPropagation();
+          showWarningOverlay(href, score);
+        }
       },
-      true // capture phase — fires before the page's own handlers
+      true
     );
   }
 
-  // ── 4. WARNING OVERLAY ────────────────────────────────────────────
-  function showWarningOverlay(anchor, href, score) {
-    // Remove any existing overlay
-    document.getElementById("scamshield-overlay")?.remove();
+  function showWarningOverlay(href, score) {
+    document.getElementById(OVERLAY_ID)?.remove();
 
     const overlay = document.createElement("div");
-    overlay.id = "scamshield-overlay";
+    overlay.id = OVERLAY_ID;
     overlay.innerHTML = `
       <div style="
         position: fixed; inset: 0; z-index: 2147483647;
@@ -174,29 +208,49 @@ const ScamShieldScanner = (() => {
     };
   }
 
-  // ── 5. MESSAGE BUS ────────────────────────────────────────────────
   function sendToBackground(message) {
     chrome.runtime.sendMessage(message).catch(() => {
-      // Background service worker may have gone idle — that's fine
+      // The service worker can wake back up on the next message.
     });
   }
 
-  // Listen for risk scores coming back from the background
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "RISK_SCORES") {
-      chrome.storage.session.set({ riskMap: message.riskMap });
+    if (message.type === "RISK_SCORES" && message.pageUrl === window.location.href) {
+      currentRiskMap = message.riskMap || {};
+      persistRiskMap(currentRiskMap, message.pageUrl);
     }
   });
 
-  // ── 6. INIT ───────────────────────────────────────────────────────
+  function loadPersistedRiskMap() {
+    chrome.storage.session.get([getStorageKey()], (result) => {
+      currentRiskMap = result[getStorageKey()] || {};
+    });
+  }
+
+  function bootstrapWhenReady() {
+    if (document.body) {
+      init();
+      return;
+    }
+
+    window.addEventListener(
+      "DOMContentLoaded",
+      () => {
+        init();
+      },
+      { once: true }
+    );
+  }
+
   function init() {
+    loadPersistedRiskMap();
     const context = extractPageContext();
     sendToBackground({ type: "PAGE_LOADED", context });
     startMutationWatcher();
     attachClickInterceptor();
   }
 
-  return { init };
+  return { init: bootstrapWhenReady };
 })();
 
 ScamShieldScanner.init();

@@ -2,14 +2,30 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ScamShield</title>
-  <style>
-    body { width: 300px; padding: 16px; font-family: system-ui, sans-serif; background: #1a1a2e; color: white; }
-    h2 { margin-top: 0; color: #e63946; }
-  </style>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <h2>ScamShield</h2>
-  <p>Real-time scam detection is active.</p>
+  <main class="popup-shell">
+    <p class="eyebrow">ScamShield</p>
+    <h1>Real-time page scanning is active.</h1>
+    <p class="body-copy">
+      Step 1 is wired up: every page load is scanned, dynamic DOM changes are watched,
+      and risky links can be intercepted before navigation.
+    </p>
+    <dl class="status-list">
+      <div>
+        <dt>Status</dt>
+        <dd id="scan-status">Monitoring this tab</dd>
+      </div>
+      <div>
+        <dt>Mode</dt>
+        <dd>Mock scoring enabled</dd>
+      </div>
+    </dl>
+    <button id="open-dashboard" type="button">Open Side Panel</button>
+  </main>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>
