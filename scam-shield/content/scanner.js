@@ -3,9 +3,8 @@ const ScamShieldScanner = (() => {
   const RISK_THRESHOLD = 70;
   const MAX_VISIBLE_TEXT_LENGTH = 3000;
   const MAX_LINKS = 80;
-  const STORAGE_KEY_PREFIX = "riskMap:";
   let debounceTimer = null;
-  let currentRiskMap = {};
+  let localRiskMap = {};
 
   function extractPageContext() {
     return {
@@ -87,24 +86,13 @@ const ScamShieldScanner = (() => {
     );
   }
 
-  function getStorageKey(pageUrl = window.location.href) {
-    return `${STORAGE_KEY_PREFIX}${pageUrl}`;
-  }
-
-  function persistRiskMap(riskMap, pageUrl) {
-    const storageKey = getStorageKey(pageUrl);
-    chrome.storage.session.set({ [storageKey]: riskMap }).catch(() => {});
-  }
-
   function startMutationWatcher() {
     if (!document.body) {
       return;
     }
 
     const observer = new MutationObserver((mutations) => {
-      const meaningful = mutations.some(
-        (m) => m.addedNodes.length > 0 || m.type === "childList"
-      );
+      const meaningful = mutations.some((mutation) => mutation.addedNodes.length > 0);
       if (!meaningful) return;
 
       clearTimeout(debounceTimer);
@@ -137,29 +125,21 @@ const ScamShieldScanner = (() => {
         if (!anchor) return;
 
         const href = anchor.href;
-        const isModifiedClick =
-          e.defaultPrevented ||
-          e.button !== 0 ||
-          e.metaKey ||
-          e.ctrlKey ||
-          e.shiftKey ||
-          e.altKey;
-        if (!href.startsWith("http") || isModifiedClick || anchor.target === "_blank") {
+        if (!href.startsWith("http")) {
           return;
         }
 
-        const score = currentRiskMap[href];
+        const score = localRiskMap[href];
         if (score >= RISK_THRESHOLD) {
           e.preventDefault();
-          e.stopPropagation();
-          showWarningOverlay(href, score);
+          showWarningOverlay(anchor, href, score);
         }
       },
       true
     );
   }
 
-  function showWarningOverlay(href, score) {
+  function showWarningOverlay(anchor, href, score) {
     document.getElementById(OVERLAY_ID)?.remove();
 
     const overlay = document.createElement("div");
@@ -215,15 +195,15 @@ const ScamShieldScanner = (() => {
   }
 
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "RISK_SCORES" && message.pageUrl === window.location.href) {
-      currentRiskMap = message.riskMap || {};
-      persistRiskMap(currentRiskMap, message.pageUrl);
+    if (message.type === "RISK_SCORES") {
+      localRiskMap = message.riskMap || {};
+      chrome.storage.session.set({ riskMap: message.riskMap || {} }).catch(() => {});
     }
   });
 
   function loadPersistedRiskMap() {
-    chrome.storage.session.get([getStorageKey()], (result) => {
-      currentRiskMap = result[getStorageKey()] || {};
+    chrome.storage.session.get(["riskMap"], (result) => {
+      localRiskMap = result.riskMap || {};
     });
   }
 
