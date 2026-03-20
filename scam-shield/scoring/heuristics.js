@@ -61,7 +61,7 @@ function checkDomain(url, pageHostname = null) {
   }
 
   // Suspicious TLDs
-  const suspiciousTLDs = [".xyz", ".top", ".click", ".loan", ".work", ".gq", ".tk", ".ml"];
+  const suspiciousTLDs = [".xyz", ".top", ".click", ".loan", ".work", ".gq", ".tk", ".ml", ".cc", ".biz"];
   if (suspiciousTLDs.some((tld) => host.endsWith(tld))) {
     signals.push({ type: "suspicious_tld", weight: 20,
       reason: `Suspicious TLD: ${url.hostname.split(".").pop()}` });
@@ -69,11 +69,24 @@ function checkDomain(url, pageHostname = null) {
 
   // Brand impersonation keywords in domain
   const brands = ["paypal", "amazon", "google", "apple", "microsoft",
-                  "netflix", "bank", "secure", "verify", "login"];
+                  "netflix", "chase", "wellsfargo", "bank", "secure", "verify", "login", "support"];
   const matchedBrand = brands.find((b) => host.includes(b));
+  
+  // If it's a link check (pageHostname exists) and points off-site
   if (matchedBrand && pageHostname && !host.includes(pageHostname.split(".")[0])) {
-    signals.push({ type: "brand_impersonation", weight: 35,
+    signals.push({ type: "brand_impersonation_link", weight: 35,
+      reason: `Link impersonates "${matchedBrand}"` });
+  } 
+  // If it's a page check, flag if domain contains brand but isn't the official .com/.net
+  else if (matchedBrand && !pageHostname && !host.endsWith(`${matchedBrand}.com`) && !host.endsWith(`${matchedBrand}.net`)) {
+    signals.push({ type: "brand_impersonation_page", weight: 40,
       reason: `Domain impersonates "${matchedBrand}"` });
+  }
+
+  // Many dashes in domain (common in phishing e.g. secure-update-account-info.com)
+  if (host.split("-").length > 3) {
+    signals.push({ type: "many_dashes", weight: 15,
+      reason: "Domain contains many dashes (common in phishing)" });
   }
 
   // IP address as hostname
@@ -98,30 +111,33 @@ function checkText(text, title) {
   const signals = [];
   const combined = `${title} ${text}`.toLowerCase();
 
-  const urgencyPhrases = [
-    "act now", "urgent", "immediate action", "account suspended",
-    "verify your account", "confirm your identity", "unusual activity",
-    "you have been selected", "claim your prize", "limited time",
-    "your account will be closed", "security alert",
-  ];
-  const matched = urgencyPhrases.filter((p) => combined.includes(p));
-  if (matched.length >= 2) {
-    signals.push({ type: "urgency_language", weight: 25,
-      reason: `Urgency/fear tactics detected: "${matched.slice(0, 2).join('", "')}"` });
-  } else if (matched.length === 1) {
-    signals.push({ type: "urgency_language_mild", weight: 10,
-      reason: `Mild urgency language: "${matched[0]}"` });
+  // Urgency / Fear tactics (using regex for broader matching)
+  const urgencyRegex = /urgent|immediate action|account suspended|verify your account|confirm your identity|unusual activity|claim your prize|limited time|security alert|account locked|action required/gi;
+  const urgencyMatches = combined.match(urgencyRegex) || [];
+  
+  // Deduplicate matches to count unique phrases
+  const uniqueUrgency = new Set(urgencyMatches.map(m => m.toLowerCase()));
+
+  if (uniqueUrgency.size >= 2) {
+    signals.push({ type: "urgency_language", weight: 30,
+      reason: `Multiple urgency/fear tactics detected` });
+  } else if (uniqueUrgency.size === 1) {
+    signals.push({ type: "urgency_language_mild", weight: 15,
+      reason: `Mild urgency language detected` });
+  }
+
+  // Crypto / Web3 Scams
+  const cryptoRegex = /seed phrase|recovery phrase|wallet connect|airdrop|double your crypto|giveaway/i;
+  if (cryptoRegex.test(combined)) {
+    signals.push({ type: "crypto_scam_language", weight: 35,
+      reason: `High-risk crypto/giveaway keywords detected` });
   }
 
   // Login / payment form language on unexpected page
-  const sensitivePatterns = [
-    "enter your password", "social security", "credit card number",
-    "bank account", "wire transfer", "bitcoin", "gift card",
-  ];
-  const sensitiveMatched = sensitivePatterns.filter((p) => combined.includes(p));
-  if (sensitiveMatched.length > 0) {
+  const sensitiveRegex = /social security|credit card number|routing number|wire transfer|enter your password/i;
+  if (sensitiveRegex.test(combined)) {
     signals.push({ type: "sensitive_data_request", weight: 30,
-      reason: `Requests sensitive info: "${sensitiveMatched[0]}"` });
+      reason: `Requests highly sensitive personal info` });
   }
 
   return signals;
@@ -136,8 +152,10 @@ function checkLinks(links, pageHostname) {
     (l) => !new URL(l.href).hostname.includes(pageHostname)
   );
   const externalRatio = links.length > 0 ? externalLinks.length / links.length : 0;
-  if (links.length > 10 && externalRatio > 0.8) {
-    signals.push({ type: "high_external_link_ratio", weight: 20,
+  
+  // Lowered threshold: even 3 links is enough to judge if 70% are external
+  if (links.length >= 3 && externalRatio > 0.7) {
+    signals.push({ type: "high_external_link_ratio", weight: 25,
       reason: `${Math.round(externalRatio * 100)}% of links go to external domains` });
   }
 
