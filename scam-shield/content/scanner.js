@@ -5,6 +5,8 @@ const ScamShieldScanner = (() => {
   const MAX_LINKS = 80;
   let debounceTimer = null;
   let localRiskMap = {};
+  let mutationObserver = null;
+  let extensionContextActive = true;
 
   function extractPageContext() {
     return {
@@ -86,25 +88,66 @@ const ScamShieldScanner = (() => {
     );
   }
 
+  function deactivateExtensionContext() {
+    extensionContextActive = false;
+    clearTimeout(debounceTimer);
+    mutationObserver?.disconnect();
+  }
+
+  function isContextInvalidatedError(error) {
+    return (
+      error &&
+      typeof error.message === "string" &&
+      error.message.includes("Extension context invalidated")
+    );
+  }
+
+  function safelyRunChromeApi(operation) {
+    if (!extensionContextActive) {
+      return null;
+    }
+
+    try {
+      return operation();
+    } catch (error) {
+      if (isContextInvalidatedError(error)) {
+        deactivateExtensionContext();
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
   function startMutationWatcher() {
     if (!document.body) {
       return;
     }
 
-    const observer = new MutationObserver((mutations) => {
+    mutationObserver = new MutationObserver((mutations) => {
+      if (!extensionContextActive) {
+        return;
+      }
+
       const meaningful = mutations.some((mutation) => mutation.addedNodes.length > 0);
       if (!meaningful) return;
 
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
+        if (!extensionContextActive) {
+          return;
+        }
+
         const context = extractPageContext();
         sendToBackground({ type: "PAGE_UPDATED", context });
       }, 1500);
     });
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
+    safelyRunChromeApi(() => {
+      mutationObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+      });
     });
   }
 
@@ -121,6 +164,10 @@ const ScamShieldScanner = (() => {
     document.addEventListener(
       "click",
       (e) => {
+        if (!extensionContextActive) {
+          return;
+        }
+
         const anchor = findAnchorFromEvent(e);
         if (!anchor) return;
 
@@ -189,21 +236,42 @@ const ScamShieldScanner = (() => {
   }
 
   function sendToBackground(message) {
-    chrome.runtime.sendMessage(message).catch(() => {
-      // The service worker can wake back up on the next message.
+    const request = safelyRunChromeApi(() => chrome.runtime.sendMessage(message));
+    request?.catch((error) => {
+      if (isContextInvalidatedError(error)) {
+        deactivateExtensionContext();
+      }
     });
   }
 
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "RISK_SCORES") {
+  safelyRunChromeApi(() => {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (!extensionContextActive || message.type !== "RISK_SCORES") {
+        return;
+      }
+
       localRiskMap = message.riskMap || {};
-      chrome.storage.session.set({ riskMap: message.riskMap || {} }).catch(() => {});
-    }
+
+      const writeRequest = safelyRunChromeApi(() =>
+        chrome.storage.session.set({ riskMap: message.riskMap || {} })
+      );
+      writeRequest?.catch((error) => {
+        if (isContextInvalidatedError(error)) {
+          deactivateExtensionContext();
+        }
+      });
+    });
   });
 
   function loadPersistedRiskMap() {
-    chrome.storage.session.get(["riskMap"], (result) => {
-      localRiskMap = result.riskMap || {};
+    safelyRunChromeApi(() => {
+      chrome.storage.session.get(["riskMap"], (result) => {
+        if (!extensionContextActive) {
+          return;
+        }
+
+        localRiskMap = result.riskMap || {};
+      });
     });
   }
 
@@ -223,6 +291,10 @@ const ScamShieldScanner = (() => {
   }
 
   function init() {
+    if (!extensionContextActive) {
+      return;
+    }
+
     loadPersistedRiskMap();
     const context = extractPageContext();
     sendToBackground({ type: "PAGE_LOADED", context });
