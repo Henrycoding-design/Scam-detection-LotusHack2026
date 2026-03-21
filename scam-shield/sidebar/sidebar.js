@@ -16,6 +16,25 @@ function escapeHtml(value = "") {
     .replaceAll(">", "&gt;");
 }
 
+function formatInlineMarkdown(value = "") {
+  return escapeHtml(value).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+function getRecommendedActions(explanation) {
+  if (Array.isArray(explanation?.recommended_actions) && explanation.recommended_actions.length > 0) {
+    return explanation.recommended_actions;
+  }
+
+  if (explanation?.recommended_action) {
+    return [{
+      title: "Recommended next step",
+      detail: explanation.recommended_action,
+    }];
+  }
+
+  return [];
+}
+
 function render(state) {
   const scan = state.lastPageResult || null;
   const status = state.scanStatus || "scanning";
@@ -23,12 +42,16 @@ function render(state) {
   const theme = VERDICT_THEME[verdict] || VERDICT_THEME.scanning;
   const reasons = (scan?.reasons || []).slice(0, 3);
   const aiLoading = status === "heuristic_ready" && (!scan?.explanation || scan?.aiStatus === "loading");
+  const recommendedActions = getRecommendedActions(scan?.explanation);
 
   if (!scan && status !== "scanning") {
     app.innerHTML = `
       <div class="header">
         ${logo}
-        <span class="brand">ScamShield</span>
+        <div>
+          <div class="brand">ScamShield</div>
+          <h1 class="page-title">Sidebar Analysis</h1>
+        </div>
       </div>
       <div class="empty">Navigate to a page to begin scanning.</div>
     `;
@@ -38,7 +61,10 @@ function render(state) {
   app.innerHTML = `
     <div class="header">
       ${logo}
-      <span class="brand">ScamShield</span>
+      <div>
+        <div class="brand">ScamShield</div>
+        <h1 class="page-title">Sidebar Analysis</h1>
+      </div>
     </div>
 
     <div class="card" style="background:${theme.bg}; border-color:${theme.color};">
@@ -50,9 +76,33 @@ function render(state) {
       </div>
     </div>
 
+    ${scan?.explanation ? `
+      <div class="card overview">
+        <h2 class="section-title">Overview</h2>
+        <div class="overview-highlight">
+          <div class="overview-headline formatted">${formatInlineMarkdown(scan.explanation.headline || "AI overview")}</div>
+          <div class="muted">This is a summary of the overall pattern the model noticed. It should be read as guidance, not certainty.</div>
+        </div>
+      </div>
+    ` : ""}
+
+    ${recommendedActions.length ? `
+      <div class="card">
+        <h2 class="section-title">Recommended Actions</h2>
+        <div class="action-list">
+          ${recommendedActions.map((action) => `
+            <div class="reason-expandable action-card">
+              <div class="reason-header"><strong>${escapeHtml(action.title || "Recommended step")}</strong></div>
+              <div class="reason-detail formatted">${formatInlineMarkdown(action.detail || "")}</div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    ` : ""}
+
     ${reasons.length ? `
       <div class="card">
-        <div class="pill muted">Top Reasons</div>
+        <h2 class="section-title">Top Reasons</h2>
         ${reasons.map((r) => {
           const detail = r.detail || "";
           if (detail) {
@@ -67,13 +117,12 @@ function render(state) {
     ` : ""}
 
     <div class="card">
-      <div class="pill muted">AI Analysis</div>
+      <h2 class="section-title">AI Analysis</h2>
       ${aiLoading ? `
         <div class="loading">Generating explanation...</div>
       ` : scan?.explanation ? `
-        <div style="font-weight:700; margin-bottom:6px;">${escapeHtml(scan.explanation.headline || "")}</div>
-        <div style="font-size:13px; color:#d1d5db; margin-bottom:8px; line-height:1.5;">${escapeHtml(scan.explanation.reason || "")}</div>
-        <div class="muted">${escapeHtml(scan.explanation.recommended_action || "")}</div>
+        <h3 class="subsection-title">Pattern Explanation</h3>
+        <div class="analysis-body formatted">${formatInlineMarkdown(scan.explanation.reason || "")}</div>
       ` : `
         <div class="muted">No AI explanation for this page.</div>
       `}
@@ -81,7 +130,7 @@ function render(state) {
 
     ${scan?.url ? `
       <div class="card">
-        <div class="pill muted">Page URL</div>
+        <h2 class="section-title">Page URL</h2>
         <div class="muted" style="word-break:break-all;">${escapeHtml(scan.url)}</div>
       </div>
     ` : ""}

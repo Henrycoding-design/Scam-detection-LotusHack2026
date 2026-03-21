@@ -36,6 +36,13 @@
         font-size: 16px;
       }
 
+      .page-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 800;
+        color: #f8fafc;
+      }
+
       .card {
         background: #111827;
         border-radius: 12px;
@@ -47,6 +54,22 @@
       .score {
         font-size: 30px;
         font-weight: 800;
+      }
+
+      .section-title {
+        margin: 0 0 12px;
+        font-size: 15px;
+        font-weight: 800;
+        color: #f8fafc;
+      }
+
+      .subsection-title {
+        margin: 0 0 8px;
+        font-size: 13px;
+        font-weight: 800;
+        color: #cbd5e1;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
       }
 
       .muted {
@@ -97,10 +120,12 @@
       }
       .reason-header::after {
         content: "▸";
-        font-size: 10px;
+        font-size: 14px;
+        font-weight: 800;
         color: #64748b;
         transition: transform 0.2s;
         flex-shrink: 0;
+        margin-left: auto;
       }
       .reason-expandable.expanded .reason-header::after {
         transform: rotate(90deg);
@@ -137,6 +162,57 @@
         color: #64748b;
         margin-top: 48px;
         font-size: 13px;
+      }
+
+      .overview {
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        background: linear-gradient(180deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.92));
+      }
+
+      .overview-highlight {
+        margin-top: 8px;
+        border-radius: 12px;
+        padding: 14px;
+        background: rgba(148, 163, 184, 0.08);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+      }
+
+      .overview-headline {
+        margin: 0 0 8px;
+        font-size: 16px;
+        font-weight: 800;
+        color: #f8fafc;
+      }
+
+      .analysis-body {
+        font-size: 13px;
+        color: #d1d5db;
+        line-height: 1.6;
+      }
+
+      .action-card {
+        border: 1px solid rgba(251, 191, 36, 0.18);
+        background: rgba(120, 53, 15, 0.18);
+      }
+
+      .action-card .reason-header {
+        font-weight: 700;
+        color: #fde68a;
+      }
+
+      .action-card .reason-detail {
+        color: #f3f4f6;
+      }
+
+      .action-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .formatted strong {
+        color: #f8fafc;
+        font-weight: 800;
       }
     </style>
   </head>

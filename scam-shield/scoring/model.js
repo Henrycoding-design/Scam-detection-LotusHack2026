@@ -91,16 +91,52 @@ export function buildFallbackExplanation({ score, signals }) {
 
   return {
     headline: verdict === "dangerous"
-      ? "High-risk page detected"
+      ? "This page shows strong warning patterns"
       : verdict === "suspicious"
-        ? "This page shows warning signs"
+        ? "This page shows several warning signs"
         : "This page appears safe",
     reason: reasonText,
     recommended_action: verdict === "dangerous"
-      ? "Leave the page immediately and do not enter any information."
+      ? "Consider leaving the page and avoid entering passwords, payment details, or personal information unless you can independently verify the site."
       : verdict === "suspicious"
-        ? "Proceed with caution. Verify the URL and do not enter sensitive info."
+        ? "Proceed carefully. Verify the URL through an official source and avoid entering sensitive information until you are confident the site is legitimate."
         : "No immediate action needed.",
+    recommended_actions: verdict === "dangerous"
+      ? [
+          {
+            title: "Pause before interacting",
+            detail: "Do not enter passwords, payment details, recovery phrases, or personal information until you verify the site independently.",
+          },
+          {
+            title: "Verify through an official channel",
+            detail: "Open the official site manually in a new tab or use the official app, rather than trusting links or prompts on this page.",
+          },
+          {
+            title: "Look for pattern mismatches",
+            detail: "Compare the domain, branding, and page behavior with what you usually see from the real service. Small inconsistencies can matter.",
+          },
+        ]
+      : verdict === "suspicious"
+        ? [
+            {
+              title: "Verify the domain first",
+              detail: "Check whether the URL matches the official brand domain exactly before logging in or downloading anything.",
+            },
+            {
+              title: "Limit sensitive actions",
+              detail: "Avoid entering passwords, payment details, or identity documents until you confirm the site is legitimate.",
+            },
+            {
+              title: "Cross-check the warning signs",
+              detail: "Use the reasons above as patterns to evaluate the page rather than assuming the page is definitely malicious.",
+            },
+          ]
+        : [
+            {
+              title: "Keep normal caution",
+              detail: "No major warning patterns were found, but it is still good practice to verify important requests through official sources.",
+            },
+          ],
   };
 }
 
@@ -123,21 +159,44 @@ ${signalDescriptions || "No specific signals detected."}
 Page text snippet:
 "${visibleText || ""}"
 
-Write a JSON object. The "reason" field MUST be a thorough explanation that helps a non-technical user understand the warning signals, how they work together, and how to verify legitimacy.
+Writing rules:
+- Use careful language. Say "may", "could", "can indicate", or "is often associated with" rather than claiming certainty.
+- Explain the PATTERNS visible here and why those patterns matter.
+- Do not say attackers definitely will do something unless the listed signals directly prove it.
+- Help the user understand how to interpret the warning signs without overclaiming.
+- You may use light markdown bold like **important phrase** for emphasis, but do not use headings, bullet lists, or code blocks in the "reason".
+
+Write a JSON object. The "reason" field MUST be a thorough explanation that helps a non-technical user understand the warning signals, what patterns they represent, how they work together, and how to verify legitimacy.
 
 JSON only, no markdown:
 {
   "headline": "...",
   "reason": "...",
-  "recommended_action": "..."
+  "recommended_action": "...",
+  "recommended_actions": [
+    {
+      "title": "short action label",
+      "detail": "deeper explanation of why this action is helpful and what the user should evaluate"
+    }
+  ]
 }`;
 }
 
 function sanitizeExplanation(explanation) {
+  const recommendedActions = Array.isArray(explanation?.recommended_actions)
+    ? explanation.recommended_actions
+        .filter((item) => item && (item.title || item.detail))
+        .map((item) => ({
+          title: item.title || "Recommended step",
+          detail: item.detail || "",
+        }))
+    : [];
+
   return {
     headline: explanation?.headline || "AI analysis completed",
     reason: explanation?.reason || "The configured AI provider returned a response, but it did not include a detailed explanation.",
     recommended_action: explanation?.recommended_action || "Review the page carefully before continuing.",
+    recommended_actions: recommendedActions,
   };
 }
 
