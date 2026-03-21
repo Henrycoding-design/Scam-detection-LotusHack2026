@@ -5,6 +5,7 @@ if (window.ScamShieldScannerReady) {
 } else {
 
 const ScamShieldScanner = (() => {
+  const WARNING_UI_DELAY_MS = 900;
   let localRiskMap = {};
   let lastFingerprint = "";
   let debounceTimer = null;
@@ -12,6 +13,8 @@ const ScamShieldScanner = (() => {
   let lastPageResult = null;
   let lastVerdict = "";
   let bannerDismissed = false;
+  let lastObservedUrl = normalizeUrl(window.location.href);
+  let pendingWarningTimer = null;
 
   function normalizeUrl(url) {
     try {
@@ -145,24 +148,74 @@ const ScamShieldScanner = (() => {
     }
   }
 
+  function scheduleScan(type, delay = 250) {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      runScan(type);
+    }, delay);
+  }
+
+  function handleUrlChange(type) {
+    const nextUrl = normalizeUrl(window.location.href);
+    if (nextUrl === lastObservedUrl) return;
+    lastObservedUrl = nextUrl;
+    lastFingerprint = "";
+    scheduleScan(type, 150);
+  }
+
   function startMutationWatcher() {
     if (!document.body) return;
 
     const observer = new MutationObserver((mutations) => {
+      if (normalizeUrl(window.location.href) !== lastObservedUrl) {
+        handleUrlChange("PAGE_NAVIGATED");
+        return;
+      }
+
       const meaningful = mutations.some(
-        (mutation) => mutation.type === "childList" && mutation.addedNodes.length > 0
+        (mutation) =>
+          (mutation.type === "childList" && mutation.addedNodes.length > 0) ||
+          mutation.type === "characterData"
       );
       if (!meaningful) return;
 
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        runScan("PAGE_UPDATED");
-      }, 400);
+      scheduleScan("PAGE_UPDATED", 400);
     });
 
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      characterData: true,
+    });
+  }
+
+  function attachNavigationWatchers() {
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function (...args) {
+      const result = originalPushState.apply(this, args);
+      handleUrlChange("PAGE_NAVIGATED");
+      return result;
+    };
+
+    history.replaceState = function (...args) {
+      const result = originalReplaceState.apply(this, args);
+      handleUrlChange("PAGE_NAVIGATED");
+      return result;
+    };
+
+    window.addEventListener("popstate", () => {
+      handleUrlChange("PAGE_NAVIGATED");
+    });
+
+    window.addEventListener("hashchange", () => {
+      handleUrlChange("PAGE_NAVIGATED");
+    });
+
+    window.addEventListener("pageshow", () => {
+      handleUrlChange("PAGE_NAVIGATED");
+      scheduleScan("PAGE_UPDATED", 150);
     });
   }
 
@@ -170,15 +223,14 @@ const ScamShieldScanner = (() => {
     sendToBackground({ type: "OPEN_SIDE_PANEL" });
   }
 
-  function syncPageWarnings(result) {
-    lastPageResult = result;
-
-    // Reset dismissal flag when the verdict changes
-    if (result?.verdict !== lastVerdict) {
-      bannerDismissed = false;
-      lastVerdict = result?.verdict || "";
+  function clearPendingWarningTimer() {
+    if (pendingWarningTimer) {
+      clearTimeout(pendingWarningTimer);
+      pendingWarningTimer = null;
     }
+  }
 
+  function applyWarningUI(result) {
     if (!window.ScamShieldUI) return;
 
     if (!result || result.verdict === "safe" || result.verdict === "not_scannable") {
@@ -205,6 +257,35 @@ const ScamShieldScanner = (() => {
         window.ScamShieldUI.removeWarningUI();
       },
     });
+  }
+
+  function syncPageWarnings(result) {
+    lastPageResult = result;
+    clearPendingWarningTimer();
+
+    // Reset dismissal flag when the verdict changes
+    if (result?.verdict !== lastVerdict) {
+      bannerDismissed = false;
+      lastVerdict = result?.verdict || "";
+    }
+
+    if (!result || result.verdict === "safe" || result.verdict === "not_scannable") {
+      applyWarningUI(result);
+      return;
+    }
+
+    if (result.aiStatus === "loading") {
+      window.ScamShieldUI?.removeWarningUI();
+      pendingWarningTimer = setTimeout(() => {
+        pendingWarningTimer = null;
+        if (lastPageResult === result && lastPageResult?.aiStatus === "loading") {
+          applyWarningUI(result);
+        }
+      }, WARNING_UI_DELAY_MS);
+      return;
+    }
+
+    applyWarningUI(result);
   }
 
   function attachClickInterceptor() {
@@ -290,6 +371,7 @@ const ScamShieldScanner = (() => {
     await restoreSessionState();
     chrome.runtime.onMessage.addListener(handleRuntimeMessage);
     attachClickInterceptor();
+    attachNavigationWatchers();
     startMutationWatcher();
     window.ScamShieldScannerReady = true;
     runScan("PAGE_LOADED");

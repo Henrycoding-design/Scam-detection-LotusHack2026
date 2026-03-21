@@ -56,7 +56,7 @@ async function injectExistingTabs() {
 // ── Message Handlers ──────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message.type === "PAGE_LOADED" || message.type === "PAGE_UPDATED") {
+  if (message.type === "PAGE_LOADED" || message.type === "PAGE_UPDATED" || message.type === "PAGE_NAVIGATED") {
     handleScan(message.context, sender.tab?.id);
   }
 
@@ -94,6 +94,37 @@ function buildLinkRiskMap(context) {
     map[href] = scoreSingleLink(href, pageHost).score;
   }
   return map;
+}
+
+function scoreToVerdict(score) {
+  if (score >= 70) return "dangerous";
+  if (score >= 30) return "suspicious";
+  return "safe";
+}
+
+function reconcileAiResult(heuristicResult, explanation) {
+  if (!explanation) {
+    return {
+      ...heuristicResult,
+      aiStatus: "ready",
+      timestamp: Date.now(),
+    };
+  }
+
+  const adjustedScore = Number.isFinite(explanation.adjusted_score)
+    ? Math.max(0, Math.min(100, Math.round(explanation.adjusted_score)))
+    : heuristicResult.score;
+
+  return {
+    ...heuristicResult,
+    score: adjustedScore,
+    verdict: ["safe", "suspicious", "dangerous"].includes(explanation.verdict)
+      ? explanation.verdict
+      : scoreToVerdict(adjustedScore),
+    explanation,
+    aiStatus: "ready",
+    timestamp: Date.now(),
+  };
 }
 
 // ── Content Script Management ─────────────────────────────────────────
@@ -225,7 +256,7 @@ async function handleScan(context, tabId) {
 
   if (scanId !== latestScanIds.get(tabId)) return;
 
-  const finalResult = { ...heuristicResult, explanation, aiStatus: "ready", timestamp: Date.now() };
+  const finalResult = reconcileAiResult(heuristicResult, explanation);
 
   await setTabResult(tabId, finalResult);
   await updateSidebar(tabId, finalResult, "ai_ready");

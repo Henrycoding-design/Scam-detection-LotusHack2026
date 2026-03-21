@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ScamShield Settings</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    .wrap {
+      max-width: 760px;
+      margin: 40px auto;
+      padding: 24px;
+    }
+    .card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 16px;
+      padding: 24px;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 28px;
+    }
+    p {
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+    label {
+      display: block;
+      margin-top: 16px;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    input, select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid #334155;
+      background: #020617;
+      color: #e2e8f0;
+      font-size: 14px;
+    }
+    button {
+      margin-top: 18px;
+      border: none;
+      border-radius: 10px;
+      background: #2563eb;
+      color: white;
+      padding: 12px 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .status {
+      margin-top: 12px;
+      min-height: 20px;
+      color: #93c5fd;
+    }
+    .hint {
+      font-size: 13px;
+    }
+    code {
+      background: #020617;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>ScamShield Settings</h1>
+      <p>Configure which AI provider the extension uses. Saved values in <code>chrome.storage.local</code> override the optional unpacked-extension fallback file <code>config.local.json</code>.</p>
+
+      <label for="ai-provider">AI Provider</label>
+      <select id="ai-provider">
+        <option value="auto">Auto</option>
+        <option value="gemini">Gemini</option>
+        <option value="openrouter">OpenRouter</option>
+      </select>
+
+      <label for="gemini-api-key">Gemini API Key</label>
+      <input id="gemini-api-key" type="password" placeholder="AIza..." autocomplete="off">
+
+      <label for="gemini-model">Gemini Model</label>
+      <input id="gemini-model" type="text" value="gemini-2.5-flash" autocomplete="off">
+
+      <label for="openrouter-api-key">OpenRouter API Key</label>
+      <input id="openrouter-api-key" type="password" placeholder="sk-or-v1-..." autocomplete="off">
+
+      <label for="openrouter-model">OpenRouter Model</label>
+      <input id="openrouter-model" type="text" value="stepfun/step-3.5-flash:free" autocomplete="off">
+
+      <button id="save-settings" type="button">Save Settings</button>
+      <div id="status" class="status"></div>
+
+      <p class="hint">For local dev, create <code>scam-shield/config.local.json</code> from <code>config.local.example.json</code>. Reload the extension after changing provider settings.</p>
+    </div>
+  </div>
+  <script src="./options.js"></script>
+</body>
+</html>

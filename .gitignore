@@ -5,4 +5,5 @@ coverage/
 .DS_Store
 *.log
 .env*
+scam-shield/config.local.json
 scam-shield/scoring/config.js
