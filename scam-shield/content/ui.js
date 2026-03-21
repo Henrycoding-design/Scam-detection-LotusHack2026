@@ -1,4 +1,6 @@
 (function () {
+  if (window.ScamShieldUI) return;
+
   function removeWarningUI() {
     document.getElementById("scamshield-danger-overlay")?.remove();
     document.getElementById("scamshield-suspicious-banner")?.remove();

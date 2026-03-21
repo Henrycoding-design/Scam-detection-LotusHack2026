@@ -3,6 +3,7 @@ const VERDICT_THEME = {
   suspicious: { color: "#f59e0b", bg: "#1c1100", label: "Suspicious" },
   dangerous: { color: "#ef4444", bg: "#1c0000", label: "Dangerous" },
   scanning: { color: "#94a3b8", bg: "#111827", label: "Scanning" },
+  not_scannable: { color: "#64748b", bg: "#111827", label: "Not Scannable" },
 };
 
 const app = document.getElementById("app");
@@ -15,7 +16,7 @@ function escapeHtml(value = "") {
 }
 
 function render(state) {
-  const scan = state.lastPageResult || state.lastScan || null;
+  const scan = state.lastPageResult || null;
   const status = state.scanStatus || "scanning";
   const verdict = status === "scanning" ? "scanning" : (scan?.verdict || "safe");
   const theme = VERDICT_THEME[verdict] || VERDICT_THEME.scanning;
@@ -78,12 +79,12 @@ function render(state) {
 }
 
 async function refresh() {
-  const state = await chrome.storage.session.get(["lastPageResult", "lastScan", "scanStatus"]);
+  const state = await chrome.storage.session.get(["lastPageResult", "scanStatus"]);
   render(state);
 }
 
-chrome.storage.session.onChanged.addListener(() => {
-  refresh();
-});
+// Background writes to lastPageResult/scanStatus on both scan completion and tab switch,
+// so this single listener handles both cases.
+chrome.storage.session.onChanged.addListener(refresh);
 
 refresh();

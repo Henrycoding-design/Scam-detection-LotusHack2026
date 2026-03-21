@@ -1,5 +1,9 @@
 // content/scanner.js
 
+if (window.ScamShieldScannerReady) {
+  // Already injected — skip
+} else {
+
 const ScamShieldScanner = (() => {
   let localRiskMap = {};
   let lastFingerprint = "";
@@ -232,15 +236,16 @@ const ScamShieldScanner = (() => {
   function handleRuntimeMessage(message) {
     if (message.type === "LINK_RISK_MAP") {
       localRiskMap = { ...(message.linkRiskMap || {}) };
-      chrome.storage.session.set({ linkRiskMap: localRiskMap }).catch(() => {});
     }
 
     if (message.type === "SCAN_STAGE_HEURISTIC") {
       syncPageWarnings(message.result);
+      lastFingerprint = buildFingerprint(extractPageContext());
     }
 
     if (message.type === "SCAN_STAGE_AI") {
       syncPageWarnings(message.result);
+      lastFingerprint = buildFingerprint(extractPageContext());
 
       const overlay = document.getElementById("scamshield-danger-overlay");
       const reasonEl = overlay?.querySelector("#ss-danger-reason");
@@ -252,16 +257,21 @@ const ScamShieldScanner = (() => {
 
   async function restoreSessionState() {
     try {
-      const state = await chrome.storage.session.get(["linkRiskMap", "lastPageResult", "lastScan"]);
-      const restoredResult = state.lastPageResult || state.lastScan || null;
-      const currentUrl = normalizeUrl(window.location.href);
+      const { activeTabId } = await chrome.storage.session.get("activeTabId");
+      if (!activeTabId) return;
 
-      if (restoredResult?.url === currentUrl) {
-        localRiskMap = state.linkRiskMap || {};
-        syncPageWarnings(restoredResult);
-      }
-    } catch (error) {
-      console.warn("[ScamShield] Failed to restore session state:", error);
+      const key = `scanResult_${activeTabId}`;
+      const { [key]: result } = await chrome.storage.session.get(key);
+      if (!result) return;
+
+      const currentUrl = normalizeUrl(window.location.href);
+      if (result.url !== currentUrl) return;
+
+      lastFingerprint = buildFingerprint(extractPageContext());
+      localRiskMap = result.linkRiskMap || {};
+      syncPageWarnings(result);
+    } catch {
+      // Session storage may be unavailable
     }
   }
 
@@ -270,6 +280,7 @@ const ScamShieldScanner = (() => {
     chrome.runtime.onMessage.addListener(handleRuntimeMessage);
     attachClickInterceptor();
     startMutationWatcher();
+    window.ScamShieldScannerReady = true;
     runScan("PAGE_LOADED");
   }
 
@@ -277,3 +288,5 @@ const ScamShieldScanner = (() => {
 })();
 
 ScamShieldScanner.init();
+
+} // end double-init guard
