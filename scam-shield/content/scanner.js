@@ -2,7 +2,7 @@
 
 const ScamShieldScanner = (() => {
   const FRAME_ID = Math.random().toString(36).substring(2, 10);
-  const SELECTOR = "a[href], form[action], iframe[src], video[src], audio[src], embed[src], object[data], input[type=file]";
+  const SELECTOR = "a[href], form[action], iframe[src], video[src], audio[src], embed[src], object[data], input[type=file], [onclick]";
   let processedNodes = new WeakSet();
   const scannedHashes = new Set(); // content-hash dedup: scan each unique text only once
   const activeBubbleIds = new Set(); // only reposition bubbles that exist
@@ -64,6 +64,13 @@ const ScamShieldScanner = (() => {
     else if ((t==="button"||t==="input") && (el.type==="submit"||el.type==="image"||(t==="button"&&!el.type))) {
       const f = el.closest("form[action]");
       if (f && hasValidUrl(f.action) && isExternalUrl(f.action)) r.push({ elementId: generateElementId(el), type: "submit", url: f.action, text: (el.innerText||el.value||"").trim().slice(0,80), formSubmit: true, isVisible: isElementVisible(el) });
+    }
+    // Capture any element with onclick that wasn't handled above (div/span/li with click handlers)
+    else if (el.hasAttribute("onclick") && r.length === 0) {
+      // Try to extract a URL from the onclick handler
+      const onclickUrl = (el.getAttribute("onclick") || "").match(/(?:window\.open|location\s*=|location\.href\s*=|window\.location\s*=)\s*['"](https?:\/\/[^'"]+)['"]/)?.[1];
+      if (onclickUrl) push("clickable", onclickUrl, el.innerText);
+      else push("clickable", undefined, el.innerText);
     }
     return r;
   }

@@ -7,3 +7,4 @@ coverage/
 .env*
 !.env.example
 scam-shield/assets/
+scam-shield/config.js

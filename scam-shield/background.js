@@ -1,11 +1,5 @@
 // background.js
-// Built-in API keys (server-side, not user-visible)
-const API_KEYS = {
-  GOOGLE_SAFE_BROWSING: "BUILTIN_GSB_KEY_PLACEHOLDER",
-  VIRUSTOTAL: "BUILTIN_VT_KEY_PLACEHOLDER",
-  OPENROUTER: "BUILTIN_OPENROUTER_KEY_PLACEHOLDER",
-  OPENAI: "BUILTIN_OPENAI_KEY_PLACEHOLDER",
-};
+importScripts('config.js');
 
 // Free tier URLs (manifest needs host_permissions for these)
 const APIS = {
@@ -74,14 +68,18 @@ async function updateElement(tabId, elementId, updates) {
   const key = `${tabId}:${elementId}`;
   const tx = database.transaction(STORE_NAME, "readwrite");
   const store = tx.objectStore(STORE_NAME);
-  
+
   const getReq = store.get(key);
   getReq.onsuccess = () => {
     const existing = getReq.result;
     if (existing) {
       const merged = { ...existing, ...updates };
       store.put(merged);
-      
+
+      // Track unsafe URLs in memory for O(1) download/file checks
+      if (merged.status === "unsafe" && merged.url) unsafeUrls.add(merged.url);
+      else if (merged.status === "safe" && merged.url) unsafeUrls.delete(merged.url);
+
       // Send update to content script, targeting the correct frame
       const frameId = existing.chromeFrameId;
       const options = frameId !== undefined ? { frameId } : {};
@@ -89,7 +87,7 @@ async function updateElement(tabId, elementId, updates) {
         type: "ELEMENT_UPDATE",
         elementId,
         data: merged
-      }, options).catch(() => {});
+      }, options).catch(() => { });
 
       // Broadcast to dashboard ports
       const dashSet = dashboardPorts.get(tabId);
@@ -101,7 +99,7 @@ async function updateElement(tabId, elementId, updates) {
               elementId,
               data: merged
             });
-          } catch (e) {}
+          } catch (e) { }
         });
       }
     }
@@ -125,6 +123,8 @@ async function clearTabData(tabId) {
     const cursor = e.target.result;
     if (cursor) {
       if (cursor.key.startsWith(`${tabId}:`)) {
+        // Remove URL from unsafe cache when clearing
+        if (cursor.value.url) unsafeUrls.delete(cursor.value.url);
         cursor.delete();
       }
       cursor.continue();
@@ -134,44 +134,81 @@ async function clearTabData(tabId) {
   const dashSet = dashboardPorts.get(tabId);
   if (dashSet) {
     dashSet.forEach(port => {
-      try { port.postMessage({ type: 'TAB_CLEARED', tabId }); } catch {}
+      try { port.postMessage({ type: 'TAB_CLEARED', tabId }); } catch { }
     });
   }
 }
 
-// Google Safe Browsing API
-async function checkGoogleSafeBrowsing(url) {
-  try {
-    const body = {
-      client: { clientId: "scamshield", clientVersion: "1.0" },
-      threatInfo: {
-        threatTypes: ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION", "SUSPICIOUS"],
-        platformTypes: ["ANY_PLATFORM"],
-        threatEntryTypes: ["URL"],
-        threatEntries: [{ url }]
-      }
-    };
-    
-    const response = await fetch(`${APIS.GSB}?key=${API_KEYS.GOOGLE_SAFE_BROWSING}`, {
-      method: "POST",
-      body: JSON.stringify(body)
-    });
-    
-    if (!response.ok) return { status: "error", score: 0, source: "gsb" };
-    
-    const data = await response.json();
-    if (data.matches && data.matches.length > 0) {
-      return { 
-        status: "unsafe", 
-        score: 90, 
-        source: "gsb",
-        details: data.matches.map(m => m.threatType).join(", ")
+// In-memory unsafe URL cache for O(1) lookup (populated when elements are marked unsafe)
+const unsafeUrls = new Set();
+
+// Google Safe Browsing API — batch mode: up to 500 URLs in a single call
+// Returns Map<url, {status, score, source, details}>
+async function checkGoogleSafeBrowsingBatch(urls) {
+  const results = new Map();
+  if (!urls.length) return results;
+
+  // GSB supports up to 500 threatEntries per call
+  const CHUNK_SIZE = 500;
+  for (let i = 0; i < urls.length; i += CHUNK_SIZE) {
+    const chunk = urls.slice(i, i + CHUNK_SIZE);
+    try {
+      const body = {
+        client: { clientId: "scamshield", clientVersion: "1.0" },
+        threatInfo: {
+          threatTypes: ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION", "SUSPICIOUS"],
+          platformTypes: ["ANY_PLATFORM"],
+          threatEntryTypes: ["URL"],
+          threatEntries: chunk.map(url => ({ url }))
+        }
       };
+
+      const response = await fetch(`${APIS.GSB}?key=${API_KEYS.GOOGLE_SAFE_BROWSING}`, {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        for (const url of chunk) results.set(url, { status: "error", score: 0, source: "gsb" });
+        continue;
+      }
+
+      const data = await response.json();
+      const matchedUrls = new Set();
+      if (data.matches) {
+        for (const match of data.matches) {
+          const matchedUrl = match.threat?.url;
+          if (matchedUrl) {
+            matchedUrls.add(matchedUrl);
+            const existing = results.get(matchedUrl);
+            if (existing && existing.status === "unsafe") {
+              existing.details += `, ${match.threatType}`;
+            } else {
+              results.set(matchedUrl, { status: "unsafe", score: 90, source: "gsb", details: match.threatType });
+              unsafeUrls.add(matchedUrl);
+            }
+          }
+        }
+      }
+      // Mark remaining URLs as safe
+      for (const url of chunk) {
+        if (!matchedUrls.has(url) && !results.has(url)) {
+          results.set(url, { status: "safe", score: 0, source: "gsb" });
+        }
+      }
+    } catch (error) {
+      for (const url of chunk) {
+        if (!results.has(url)) results.set(url, { status: "error", score: 0, source: "gsb", error: error.message });
+      }
     }
-    return { status: "safe", score: 0, source: "gsb" };
-  } catch (error) {
-    return { status: "error", score: 0, source: "gsb", error: error.message };
   }
+  return results;
+}
+
+// Single-URL wrapper for download interceptor and other callers
+async function checkGoogleSafeBrowsing(url) {
+  const results = await checkGoogleSafeBrowsingBatch([url]);
+  return results.get(url) || { status: "error", score: 0, source: "gsb" };
 }
 
 // VirusTotal API — fire-and-forget: submit URL, return pending immediately
@@ -233,9 +270,15 @@ async function fetchVTResult(tabId, elementId, analysisId) {
     }
 
     const analysisData = await analysisRes.json();
-    const stats = analysisData.data.attributes.last_analysis_stats;
+    const vtStatus = analysisData.data?.attributes?.status;
+    const stats = analysisData.data?.attributes?.last_analysis_stats;
     const malicious = stats?.malicious || 0;
     const suspicious = stats?.suspicious || 0;
+
+    if (vtStatus && vtStatus !== "completed") {
+      scheduleVTCheck(tabId, elementId, analysisId, 5000);
+      return;
+    }
 
     if (malicious > 0 || suspicious > 0) {
       const score = Math.min(100, (malicious * 20) + (suspicious * 10));
@@ -253,7 +296,11 @@ async function fetchVTResult(tabId, elementId, analysisId) {
       });
     }
   } catch (error) {
-    scheduleVTCheck(tabId, elementId, analysisId, 5000);
+    await updateElement(tabId, elementId, {
+      status: "error", source: "vt",
+      shortExplanation: "VT scan failed.",
+      longExplanation: `VirusTotal check failed: ${error.message}`
+    });
   }
 }
 
@@ -288,10 +335,10 @@ Return JSON: {"short": "...", "long": "..."}. Be concise and factual.`;
     });
 
     if (!response.ok) throw new Error(`OpenRouter error: ${response.status}`);
-    
+
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "{}";
-    
+
     try {
       const parsed = JSON.parse(content);
       return {
@@ -422,7 +469,6 @@ async function handleTextThreats(threats, pageUrl, pageText, tabId, frameId) {
   const tx = database.transaction(STORE_NAME, "readwrite");
   const store = tx.objectStore(STORE_NAME);
   for (const rec of records) {
-    store.delete(rec.key);
     store.put(rec);
   }
   await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
@@ -440,7 +486,7 @@ async function handleTextThreats(threats, pageUrl, pageText, tabId, frameId) {
         contextSnippet: rec.contextSnippet,
       };
       dashSet.forEach(port => {
-        try { port.postMessage({ type: 'ELEMENT_UPDATE', elementId: rec.elementId, data: broadcast }); } catch {}
+        try { port.postMessage({ type: 'ELEMENT_UPDATE', elementId: rec.elementId, data: broadcast }); } catch { }
       });
     }
   }
@@ -451,10 +497,10 @@ async function handleScan(context, tabId, frameId) {
     console.warn("[ScamShield] No tabId, cannot send updates");
     return;
   }
-  
+
   console.log("[ScamShield] Scanning:", context.url);
   console.log(`  → ${context.elements.length} elements found`);
-  
+
   const scanned = await storeAndDiffElements(context.elements, tabId, frameId);
   await scanElements(scanned.urlElements, scanned.nonUrlElements, tabId, context.visibleText);
 }
@@ -490,7 +536,6 @@ async function storeAndDiffElements(elements, tabId, frameId) {
   const tx = database.transaction(STORE_NAME, "readwrite");
   const store = tx.objectStore(STORE_NAME);
   for (const el of elementsToScan) {
-    store.delete(`${tabId}:${el.elementId}`);
     store.put({
       key: `${tabId}:${el.elementId}`,
       tabId, elementId: el.elementId, type: el.type,
@@ -516,10 +561,10 @@ function fireAIExplanation(tabId, element, contextText, details) {
   if (!contextText) return;
   generateAIExplanation(element.url, element.type, contextText, details)
     .then(ai => updateElement(tabId, element.elementId, ai))
-    .catch(() => {});
+    .catch(() => { });
 }
 
-// ── SCAN ELEMENTS: dedup URLs, concurrent GSB+VT, per-element AI ──
+// ── SCAN ELEMENTS: dedup URLs, batch GSB, concurrent VT, per-element AI ──
 async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
   // Process non-URL elements concurrently
   await Promise.allSettled(nonUrlElements.map(element =>
@@ -531,26 +576,35 @@ async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
   ));
 
   // Deduplicate: group elements by URL so each URL is scanned once
+  // Skip data: and blob: URLs — they can't be meaningfully scanned
   const urlMap = new Map();
   for (const el of urlElements) {
+    if (el.url && (el.url.startsWith("data:") || el.url.startsWith("blob:"))) {
+      await updateElement(tabId, el.elementId, {
+        status: "safe", riskScore: 0, source: "manual",
+        shortExplanation: "Safe (inline content)",
+        longExplanation: "This is inline content (data/blob URL) and cannot be externally scanned."
+      });
+      continue;
+    }
     if (!urlMap.has(el.url)) urlMap.set(el.url, []);
     urlMap.get(el.url).push(el);
   }
 
-  // Scan each unique URL — GSB+VT concurrently, fan-out to all elements sharing the URL
-  await Promise.allSettled(Array.from(urlMap.entries()).map(async ([url, elements]) => {
+  const uniqueUrls = Array.from(urlMap.keys());
+  if (!uniqueUrls.length) return;
+
+  // Batch GSB: check ALL unique URLs in a single API call (up to 500)
+  const gsbResults = await checkGoogleSafeBrowsingBatch(uniqueUrls);
+
+  // Process GSB results and fan-out to all elements sharing each URL
+  const unsafeElements = [];
+  const needsVT = []; // URLs where GSB returned safe/error — submit to VT concurrently
+
+  for (const [url, elements] of urlMap) {
+    const gsb = gsbResults.get(url) || { status: "error" };
     const elementIds = elements.map(e => e.elementId);
 
-    // Run both GSB and VT concurrently
-    const [gsbResult, vtResult] = await Promise.allSettled([
-      checkGoogleSafeBrowsing(url),
-      checkVirusTotal(url)
-    ]);
-
-    const gsb = gsbResult.status === "fulfilled" ? gsbResult.value : { status: "error" };
-    const vt = vtResult.status === "fulfilled" ? vtResult.value : { status: "error" };
-
-    // If GSB flags unsafe, mark all elements immediately
     if (gsb.status === "unsafe") {
       for (const eid of elementIds) {
         await updateElement(tabId, eid, {
@@ -560,18 +614,20 @@ async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
           longExplanation: `This element has been flagged by Google Safe Browsing: ${gsb.details}. It is recommended to avoid interacting with it.`
         });
       }
-      // Individual AI explanation for each element
-      for (const el of elements) {
-        fireAIExplanation(tabId, el, contextText, `GSB: ${gsb.details}`);
-      }
-      // VT result still pending? Schedule check for additional data
-      if (vt.status === "pending" && vt.analysisId) {
-        for (const eid of elementIds) scheduleVTCheck(tabId, eid, vt.analysisId, 5000);
-      }
-      return;
+      for (const el of elements) unsafeElements.push(el);
+    } else {
+      needsVT.push({ url, elements, elementIds });
     }
+  }
 
-    // If VT submitted successfully, mark all as pending
+  // Fire AI explanations for GSB-flagged unsafe elements (concurrent, individual calls)
+  for (const el of unsafeElements) {
+    fireAIExplanation(tabId, el, contextText, `GSB unsafe`);
+  }
+
+  // Submit VT concurrently for URLs that passed GSB
+  await Promise.allSettled(needsVT.map(async ({ url, elementIds }) => {
+    const vt = await checkVirusTotal(url);
     if (vt.status === "pending" && vt.analysisId) {
       for (const eid of elementIds) {
         await updateElement(tabId, eid, {
@@ -581,11 +637,7 @@ async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
         });
         scheduleVTCheck(tabId, eid, vt.analysisId, 5000);
       }
-      return;
-    }
-
-    // VT returned unsafe — mark all elements
-    if (vt.status === "unsafe") {
+    } else if (vt.status === "unsafe") {
       for (const eid of elementIds) {
         await updateElement(tabId, eid, {
           status: "unsafe", riskScore: vt.score, source: "vt",
@@ -594,15 +646,11 @@ async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
           longExplanation: `This element has been flagged by security services: VT: ${vt.details}. It is recommended to avoid interacting with it.`
         });
       }
-      for (const el of elements) {
-        fireAIExplanation(tabId, el, contextText, `VT: ${vt.details}`);
-      }
     } else {
-      // Both safe or error
       for (const eid of elementIds) {
         await updateElement(tabId, eid, {
           status: "safe", riskScore: 0,
-          source: gsb.status === "safe" ? "gsb" : vt.status === "safe" ? "vt" : "manual",
+          source: vt.status === "safe" ? "vt" : "manual",
           shortExplanation: "Safe",
           longExplanation: "This element passed security checks and appears safe."
         });
@@ -652,7 +700,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.tabs.sendMessage(tabId, {
         type: "RESTORE_ELEMENT",
         elementId: message.elementId
-      }).catch(() => {});
+      }).catch(() => { });
       sendResponse({ success: true });
     }
     return true;
@@ -693,14 +741,15 @@ chrome.runtime.onConnect.addListener((port) => {
       dashboardPorts.get(activeTabId).add(port);
       // Send existing data immediately
       getAllElementsForTab(activeTabId).then(elements => {
-        try { port.postMessage({ type: 'TAB_DATA', tabId: activeTabId, elements: Array.from(elements.values()) }); } catch {}
-      }).catch(() => {});
+        try { port.postMessage({ type: 'TAB_DATA', tabId: activeTabId, elements: Array.from(elements.values()) }); } catch { }
+      }).catch(() => { });
     }
   });
 });
 
-// Check IndexedDB for an unsafe URL scan result
+// Check if a URL was flagged unsafe — O(1) in-memory cache first, then IndexedDB fallback
 async function isUrlUnsafeInDB(url) {
+  if (unsafeUrls.has(url)) return true;
   const database = await openDB();
   const tx = database.transaction(STORE_NAME, "readonly");
   const store = tx.objectStore(STORE_NAME);
@@ -709,7 +758,10 @@ async function isUrlUnsafeInDB(url) {
     req.onsuccess = (e) => {
       const cursor = e.target.result;
       if (cursor) {
-        if (cursor.value.url === url && cursor.value.status === "unsafe") { resolve(true); return; }
+        if (cursor.value.url === url && cursor.value.status === "unsafe") {
+          unsafeUrls.add(url); // populate cache for next time
+          resolve(true); return;
+        }
         cursor.continue();
       } else resolve(false);
     };
@@ -756,7 +808,7 @@ chrome.webNavigation?.onBeforeNavigate?.addListener((details) => {
           if (found) { chrome.tabs.update(details.tabId, { url: "about:blank" }); return; }
           const gsb = await checkGoogleSafeBrowsing(dl.url);
           if (gsb.status === "unsafe") chrome.tabs.update(details.tabId, { url: "about:blank" });
-        }).catch(() => {});
+        }).catch(() => { });
         break;
       }
     }
@@ -783,17 +835,12 @@ chrome.webNavigation?.onReferenceFragmentUpdated?.addListener((details) => {
 });
 
 // Additional safety net: tabs.onUpdated catches navigations that webNavigation may miss
-// (address bar entries, certain redirects). Dedup window prevents double-clears.
+// (address bar entries, certain redirects).
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading") clearTabData(tabId);
 });
 
-// Fallback: if webNavigation is unavailable, tabs.onUpdated is the primary mechanism
-if (!chrome.webNavigation) {
-  // Already registered above, nothing extra needed
-}
-
 // Open side panel when extension icon is clicked
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
-  .catch(() => {});
+  .catch(() => { });
