@@ -1,0 +1,133 @@
+<!--
+Scenario: Normal blog style product page with no scam indicators
+Signals: none
+Expected minimum score: under 15
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="A calm product story page about a ceramic pour-over set and how it fits into a slower morning routine.">
+  <meta property="og:site_name" content="Harbor Pine Journal">
+  <meta property="og:url" content="https://www.harborpinejournal.com/stories/ceramic-pour-over-set">
+  <meta property="og:description" content="A thoughtful feature on a handcrafted ceramic pour-over set and the design choices behind it.">
+  <title>Ceramic Pour-Over Set Review</title>
+  <style>
+    :root {
+      --sand: #efe3d2;
+      --paper: #fbf7f1;
+      --ink: #2b241f;
+      --muted: #6a5f56;
+      --sage: #7a8c72;
+      --line: #dfd1c0;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(239,227,210,0.8), rgba(251,247,241,0.95)),
+        var(--paper);
+    }
+
+    .page {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 40px 18px 60px;
+    }
+
+    .hero {
+      padding: 36px;
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(122,140,114,0.15), rgba(255,255,255,0.72));
+      border: 1px solid rgba(122,140,114,0.22);
+    }
+
+    .eyebrow {
+      color: var(--sage);
+      font-size: 13px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: 46px;
+      line-height: 1.08;
+    }
+
+    p {
+      margin: 0 0 15px;
+      line-height: 1.75;
+      font-size: 18px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 0.9fr;
+      gap: 24px;
+      margin-top: 28px;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.75);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 24px;
+    }
+
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 24px;
+    }
+
+    .nav {
+      margin-top: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .nav a {
+      color: #3f5b48;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(63,91,72,0.35);
+    }
+
+    @media (max-width: 760px) {
+      .grid { grid-template-columns: 1fr; }
+      h1 { font-size: 36px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="eyebrow">Design Notes</div>
+      <h1>Ceramic Pour-Over Set Review</h1>
+      <p>This week we spent time with a handmade ceramic pour-over set from a small studio in Da Lat. The piece feels balanced in the hand, pours cleanly, and encourages a slower morning routine without turning preparation into a chore.</p>
+      <p>The dripper has a stable base, the glaze softens with daylight, and the matching server keeps heat well for one or two cups. It is the kind of object that quietly improves a kitchen shelf rather than asking for attention.</p>
+    </section>
+    <div class="grid">
+      <article class="card">
+        <h2>What We Liked</h2>
+        <p>The ridges inside the brewer kept flow consistent, even with a finer grind. Cleanup was easy, and the handle on the server felt comfortable when pouring multiple cups over breakfast.</p>
+        <p>The included filters fit neatly, and the soft matte finish paired well with wood and linen accessories on the counter.</p>
+      </article>
+      <aside class="card">
+        <h2>More to Read</h2>
+        <div class="nav">
+          <a href="index.html">Back to test pages</a>
+          <a href="safe-page.html#materials">Materials</a>
+          <a href="safe-page.html#care">Care guide</a>
+          <a href="safe-page.html#gallery">Photo notes</a>
+        </div>
+      </aside>
+    </div>
+  </div>
+</body>
+</html>

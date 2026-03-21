@@ -1,0 +1,182 @@
+<!--
+Scenario: Fake streaming service suspension notice
+Signals: urgency_language, sensitive_data_request, offsite_login_link, og_domain_mismatch, no_meta_description
+Expected minimum score: 80+ when served from localhost; 80+ also plausible from file:// due to text/meta signals
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:site_name" content="Netflix">
+  <meta property="og:url" content="https://member-center-streamhelp.net/billing/review">
+  <title>Immediate Action Required for Your Streaming Account</title>
+  <style>
+    :root {
+      --bg: #0c0c0f;
+      --panel: #17181d;
+      --line: #2a2c35;
+      --red: #e50914;
+      --text: #f5f5f7;
+      --muted: #b3b4bb;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(229, 9, 20, 0.2), transparent 26%),
+        linear-gradient(180deg, #0c0c0f 0%, #09090c 100%);
+      color: var(--text);
+    }
+
+    .banner {
+      background: #ffe46a;
+      color: #2b2200;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      padding: 10px 14px;
+      border-bottom: 1px solid #d7b700;
+    }
+
+    .shell {
+      max-width: 980px;
+      margin: 36px auto 54px;
+      padding: 0 18px;
+    }
+
+    .screen {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      background: linear-gradient(180deg, rgba(23,24,29,0.96), rgba(12,12,15,0.98));
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+    }
+
+    .left, .right {
+      padding: 34px;
+    }
+
+    .left {
+      border-right: 1px solid rgba(255,255,255,0.07);
+      background: linear-gradient(180deg, rgba(229,9,20,0.08), transparent 40%);
+    }
+
+    .logo {
+      color: var(--red);
+      font-size: 36px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: 42px;
+      line-height: 1.05;
+    }
+
+    p {
+      margin: 0 0 14px;
+      line-height: 1.7;
+      font-size: 16px;
+      color: #e9eaef;
+    }
+
+    .warning {
+      background: rgba(229, 9, 20, 0.1);
+      border: 1px solid rgba(229, 9, 20, 0.35);
+      border-radius: 18px;
+      padding: 18px 18px 16px;
+      margin: 22px 0;
+    }
+
+    .warning strong {
+      display: block;
+      color: #ffb6bc;
+      font-size: 13px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .summary {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 24px;
+    }
+
+    .summary h2 {
+      margin: 0 0 16px;
+      font-size: 22px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      color: var(--muted);
+    }
+
+    .row:last-child { border-bottom: 0; }
+
+    .value {
+      color: #fff;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .cta {
+      display: inline-block;
+      margin-top: 22px;
+      padding: 16px 22px;
+      border-radius: 14px;
+      text-decoration: none;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(135deg, #e50914, #b00610);
+    }
+
+    @media (max-width: 840px) {
+      .screen { grid-template-columns: 1fr; }
+      .left { border-right: 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
+      h1 { font-size: 34px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="banner">SCAMSHIELD TEST PAGE — Safe for testing. No real data is collected.</div>
+  <div class="shell">
+    <div class="screen">
+      <section class="left">
+        <div class="logo">NETFLIX</div>
+        <h1>Your account will be closed</h1>
+        <p>We were unable to validate the latest payment attempt on your subscription. Immediate action is required to restore playback and prevent a full account locked review.</p>
+        <div class="warning">
+          <strong>Billing Hold</strong>
+          Security alert: your membership is scheduled for cancellation today unless the payment profile is updated and verified.
+        </div>
+        <p>To continue streaming without interruption, please review the billing record connected to your credit card number and confirm your identity on the secure update page.</p>
+      </section>
+      <aside class="right">
+        <div class="summary">
+          <h2>Membership Summary</h2>
+          <div class="row"><span>Plan</span><span class="value">Premium UHD</span></div>
+          <div class="row"><span>Status</span><span class="value">Suspended</span></div>
+          <div class="row"><span>Renewal</span><span class="value">Failed</span></div>
+          <div class="row"><span>Deadline</span><span class="value">Within 20 minutes</span></div>
+          <a class="cta" href="http://stream-billing-verify.example-membership.net/update">Verify payment details</a>
+        </div>
+      </aside>
+    </div>
+  </div>
+</body>
+</html>
