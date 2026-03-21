@@ -25,7 +25,7 @@
         ">
           <div style="font-size: 1.9rem; font-weight: 800; color: #ef4444;">Dangerous Link</div>
           <div style="margin-top: 8px; color: #fca5a5; font-size: 1rem;">
-            Risk Score: ${score}/100
+            Safety Score: ${score}/100
           </div>
           <div style="margin-top: 12px; color: #d1d5db; font-size: 0.85rem; word-break: break-all;">
             ${href}
@@ -72,7 +72,7 @@
         gap: 12px; font: 600 14px system-ui, sans-serif;
         box-shadow: 0 6px 20px rgba(0,0,0,0.2);
       ">
-        <span>Suspicious page detected (${score}/100)</span>
+        <span>Suspicious page (Safety: ${score}/100)</span>
         <div style="display: flex; gap: 8px;">
           <button id="ss-open-panel" style="
             padding: 8px 12px; border: none; border-radius: 8px;

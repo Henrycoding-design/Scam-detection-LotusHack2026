@@ -39,6 +39,9 @@ const ScamShieldScanner = (() => {
       meta: extractMeta(),
       links: extractLinks(),
       visibleText: extractVisibleText(),
+      formInfo: extractFormInfo(),
+      iframeInfo: extractIframeInfo(),
+      scriptInfo: extractScriptInfo(),
       timestamp: Date.now(),
     };
   }
@@ -98,6 +101,118 @@ const ScamShieldScanner = (() => {
     }
 
     return chunks.join(" ");
+  }
+
+  function extractFormInfo() {
+    const forms = [];
+    const hostname = window.location.hostname;
+    document.querySelectorAll("form").forEach((form) => {
+      let actionHost = "";
+      try { actionHost = form.action ? new URL(form.action).hostname : ""; } catch {}
+
+      forms.push({
+        actionHost,
+        hasPassword: !!form.querySelector('input[type="password"]'),
+        hiddenInputCount: form.querySelectorAll('input[type="hidden"]').length,
+      });
+    });
+
+    // Also check for password inputs outside of <form> elements
+    const loosePasswords = document.querySelectorAll('input[type="password"]');
+    if (loosePasswords.length > 0 && forms.length === 0) {
+      forms.push({
+        actionHost: "",
+        hasPassword: true,
+        hiddenInputCount: 0,
+      });
+    }
+
+    return forms;
+  }
+
+  function extractIframeInfo() {
+    const iframes = [];
+    document.querySelectorAll("iframe").forEach((iframe) => {
+      const style = window.getComputedStyle(iframe);
+      const isHidden =
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.opacity === "0" ||
+        iframe.width === "0" ||
+        iframe.height === "0" ||
+        iframe.offsetWidth === 0 ||
+        iframe.offsetHeight === 0;
+
+      let isCrossOrigin = false;
+      try {
+        if (iframe.src) {
+          isCrossOrigin = new URL(iframe.src).hostname !== window.location.hostname;
+        }
+      } catch {}
+
+      iframes.push({
+        src: iframe.src || "",
+        isHidden,
+        isCrossOrigin,
+      });
+    });
+    return iframes;
+  }
+
+  function extractScriptInfo() {
+    const scripts = document.querySelectorAll("script");
+    let inlineCount = 0;
+    let hasJsFuck = false;
+    let hasEvalAtob = false;
+    let blocksRightClick = false;
+    let blocksDevTools = false;
+    let hasCryptoMiner = false;
+
+    scripts.forEach((script) => {
+      const src = script.src || "";
+      const content = script.textContent || "";
+
+      if (!src) inlineCount++;
+
+      // JSFuck: code that's almost entirely []+!()
+      if (content.length > 200 && /^[\[\]\+\!\(\)\s]+$/.test(content.slice(0, 500))) {
+        hasJsFuck = true;
+      }
+
+      // eval(atob(...))
+      if (/eval\s*\(\s*atob\s*\(/.test(content)) {
+        hasEvalAtob = true;
+      }
+
+      // Right-click disabling
+      if (/addEventListener\s*\(\s*['"]contextmenu['"]/.test(content) && /preventDefault/.test(content)) {
+        blocksRightClick = true;
+      }
+
+      // DevTools blocking
+      if (/F12|devtools|debugger\s*;?\s*\}/.test(content) || /keydown.*F12/i.test(content)) {
+        blocksDevTools = true;
+      }
+
+      // Crypto miner indicators
+      if (/coinhive|crypto-loot|coinimp|minexmr|webassembly.*mine|wss:.*pool/i.test(content + src)) {
+        hasCryptoMiner = true;
+      }
+    });
+
+    // Also check inline event handlers for right-click blocking
+    if (!blocksRightClick && document.documentElement.outerHTML.includes('oncontextmenu')) {
+      blocksRightClick = true;
+    }
+
+    return {
+      inlineScriptCount: inlineCount,
+      hasJsFuck,
+      hasEvalAtob,
+      blocksRightClick,
+      blocksDevTools,
+      hasCryptoMiner,
+    };
   }
 
   function isElementVisible(el) {
@@ -217,8 +332,8 @@ const ScamShieldScanner = (() => {
         const href = normalizeUrl(anchor.href);
         if (!href.startsWith("http")) return;
 
-        const score = localRiskMap[href] ?? 0;
-        if (score < 70) return;
+      const score = localRiskMap[href] ?? 100;
+      if (score > 30) return;
 
         event.preventDefault();
         event.stopPropagation();

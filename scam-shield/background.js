@@ -1,5 +1,7 @@
 import { scorePageContext, scoreSingleLink, buildTopReasons } from "./scoring/heuristics.js";
-import { getAiExplanation, buildHeuristicFallbackExplanation } from "./scoring/model.js";
+import { getAiExplanation, buildFallbackExplanation } from "./scoring/model.js";
+import { initBlocklist, checkBlocklist } from "./scoring/blocklist.js";
+import { checkDomainAge } from "./scoring/domainAge.js";
 import {
   setActiveTabId,
   setTabResult,
@@ -25,7 +27,7 @@ function isRestrictedUrl(url) {
 function buildRestrictedResult(url) {
   return {
     url: url || "",
-    score: 0,
+    score: 100,
     verdict: "not_scannable",
     reasons: [],
     signals: [],
@@ -41,10 +43,16 @@ function buildRestrictedResult(url) {
   };
 }
 
-// ── Install / Startup: inject into pre-existing tabs ─────────────────
+// ── Install / Startup ─────────────────────────────────────────────────
 
-chrome.runtime.onInstalled.addListener(injectExistingTabs);
-chrome.runtime.onStartup.addListener(injectExistingTabs);
+chrome.runtime.onInstalled.addListener(async () => {
+  initBlocklist();
+  injectExistingTabs();
+});
+chrome.runtime.onStartup.addListener(() => {
+  initBlocklist();
+  injectExistingTabs();
+});
 
 async function injectExistingTabs() {
   const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
@@ -120,7 +128,7 @@ async function ensureContentScripts(tabId) {
     });
     await new Promise((r) => setTimeout(r, 500));
   } catch {
-    // Restricted page (chrome://, chrome web store, etc.)
+    // Restricted page
   }
 }
 
@@ -137,7 +145,6 @@ async function handleTabSwitch(tabId) {
     return;
   }
 
-  // Check if this is a browser-internal page that can't run content scripts
   try {
     const tab = await chrome.tabs.get(tabId);
     if (isRestrictedUrl(tab.url)) {
@@ -146,11 +153,8 @@ async function handleTabSwitch(tabId) {
       await updateSidebar(tabId, restricted, "ai_ready");
       return;
     }
-  } catch {
-    // Can't read tab info
-  }
+  } catch {}
 
-  // No cached result — show scanning state and ensure scripts are injected
   await updateSidebar(tabId, null, "scanning");
   ensureContentScripts(tabId).catch(() => {});
 }
@@ -159,27 +163,66 @@ async function safeSendMessage(tabId, payload) {
   if (!tabId) return;
   try {
     await chrome.tabs.sendMessage(tabId, payload);
-  } catch {
-    // Tab may not have content script loaded yet
-  }
+  } catch {}
 }
 
 // ── Scan Pipeline ─────────────────────────────────────────────────────
 
 async function runHeuristicStage(context) {
-  const { score, signals } = scorePageContext(context);
-  const verdict = score >= 70 ? "dangerous" : score >= 30 ? "suspicious" : "safe";
+  // Synchronous blocklist check
+  let blocklistHit = null;
+  try {
+    blocklistHit = checkBlocklist(new URL(context.url).hostname);
+  } catch {}
+
+  // Enrich context with blocklist + DOM analysis
+  const enriched = { ...context, blocklistHit, domainAgeSignal: null };
+
+  const { score, signals, confidence } = scorePageContext(enriched);
+  // score: 100 = safe, 0 = dangerous
+  const verdict = score >= 70 ? "safe" : score >= 30 ? "suspicious" : "dangerous";
+
   return {
     url: normalizeUrl(context.url),
     score,
     verdict,
+    confidence,
     reasons: buildTopReasons(signals, 3),
     signals,
     linkRiskMap: buildLinkRiskMap(context),
     explanation: null,
-    aiStatus: score >= 20 ? "loading" : "skipped",
+    aiStatus: score <= 70 ? "loading" : "skipped",
     timestamp: Date.now(),
   };
+}
+
+async function enrichDomainAge(context, heuristicResult, tabId) {
+  try {
+    const hostname = new URL(context.url).hostname;
+    const ageResult = await checkDomainAge(hostname);
+    if (!ageResult?.signal) return heuristicResult;
+
+    // Re-score with domain age signal
+    const enriched = {
+      ...context,
+      blocklistHit: heuristicResult.signals.find((s) => s.type.startsWith("blocklist_")) || null,
+      domainAgeSignal: ageResult.signal,
+    };
+    const { score, signals, confidence } = scorePageContext(enriched);
+    const verdict = score >= 70 ? "safe" : score >= 30 ? "suspicious" : "dangerous";
+
+    return {
+      ...heuristicResult,
+      score,
+      verdict,
+      confidence,
+      reasons: buildTopReasons(signals, 3),
+      signals,
+      linkRiskMap: heuristicResult.linkRiskMap,
+    };
+  } catch {
+    return heuristicResult;
+  }
 }
 
 async function runAiStage(heuristicResult, context) {
@@ -189,9 +232,9 @@ async function runAiStage(heuristicResult, context) {
       score: heuristicResult.score,
       signals: heuristicResult.signals,
       visibleText: (context.visibleText || "").slice(0, 3000),
-    }) || buildHeuristicFallbackExplanation(heuristicResult);
+    }) || buildFallbackExplanation(heuristicResult);
   } catch {
-    return buildHeuristicFallbackExplanation(heuristicResult);
+    return buildFallbackExplanation(heuristicResult);
   }
 }
 
@@ -201,10 +244,8 @@ async function handleScan(context, tabId) {
   const scanId = (latestScanIds.get(tabId) || 0) + 1;
   latestScanIds.set(tabId, scanId);
 
-  // Heuristic stage — synchronous, always runs
+  // Stage 1: Heuristic + blocklist (instant)
   const heuristicResult = await runHeuristicStage(context);
-
-  // Abort if a newer scan started while we were computing
   if (scanId !== latestScanIds.get(tabId)) return;
 
   await setTabResult(tabId, heuristicResult);
@@ -213,19 +254,22 @@ async function handleScan(context, tabId) {
   await safeSendMessage(tabId, { type: "SCAN_STAGE_HEURISTIC", result: heuristicResult });
 
   // Skip AI for clearly safe pages
-  if (heuristicResult.score < 20) {
+  if (heuristicResult.score >= 80) {
     const safeResult = { ...heuristicResult, aiStatus: "skipped" };
     await setTabResult(tabId, safeResult);
     await updateSidebar(tabId, safeResult, "ai_ready");
     return;
   }
 
-  // AI stage — async, may timeout
-  const explanation = await runAiStage(heuristicResult, context);
-
+  // Stage 2: Domain age (async, cached)
+  const enrichedResult = await enrichDomainAge(context, heuristicResult, tabId);
   if (scanId !== latestScanIds.get(tabId)) return;
 
-  const finalResult = { ...heuristicResult, explanation, aiStatus: "ready", timestamp: Date.now() };
+  // Stage 3: AI explanation
+  const explanation = await runAiStage(enrichedResult, context);
+  if (scanId !== latestScanIds.get(tabId)) return;
+
+  const finalResult = { ...enrichedResult, explanation, aiStatus: "ready", timestamp: Date.now() };
 
   await setTabResult(tabId, finalResult);
   await updateSidebar(tabId, finalResult, "ai_ready");

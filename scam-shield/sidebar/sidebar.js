@@ -21,7 +21,8 @@ function render(state) {
   const verdict = status === "scanning" ? "scanning" : (scan?.verdict || "safe");
   const theme = VERDICT_THEME[verdict] || VERDICT_THEME.scanning;
   const reasons = (scan?.reasons || []).slice(0, 3);
-  const aiLoading = status === "heuristic_ready" && (!scan?.explanation || scan?.aiStatus === "loading");
+  const explanation = scan?.explanation || null;
+  const aiLoading = status === "heuristic_ready" && (!explanation || scan?.aiStatus === "loading");
 
   if (!scan && status !== "scanning") {
     app.innerHTML = `
@@ -34,6 +35,57 @@ function render(state) {
     return;
   }
 
+  // Build reasons list — first item gets the AI explanation if available
+  let reasonsHtml = "";
+  if (reasons.length > 0 || explanation) {
+    const items = [];
+
+    // First reason gets AI explanation merged in
+    if (reasons.length > 0) {
+      const first = reasons[0];
+      const text = typeof first === "string" ? first : first.reason;
+      let detail = typeof first === "string" ? "" : (first.detail || "");
+
+      // If AI explanation is available, prepend it to the first reason's detail
+      if (explanation?.reason) {
+        detail = explanation.reason + (detail ? "\n\n" + detail : "");
+      }
+
+      if (detail) {
+        items.push(renderExpandable(text, detail));
+      } else {
+        items.push(`<div class="reason">${escapeHtml(text)}</div>`);
+      }
+    } else if (explanation?.reason) {
+      // No heuristic reasons but AI explanation exists
+      items.push(renderExpandable(explanation.headline || "Analysis", explanation.reason));
+    }
+
+    // Remaining reasons
+    for (let i = 1; i < reasons.length; i++) {
+      const r = reasons[i];
+      const text = typeof r === "string" ? r : r.reason;
+      const detail = typeof r === "string" ? "" : (r.detail || "");
+      if (detail) {
+        items.push(renderExpandable(text, detail));
+      } else {
+        items.push(`<div class="reason">${escapeHtml(text)}</div>`);
+      }
+    }
+
+    // Loading indicator if AI is still working
+    if (aiLoading && !explanation) {
+      items.push(`<div class="loading" style="padding: 8px 12px; font-size: 12px;">Analyzing with AI...</div>`);
+    }
+
+    reasonsHtml = `
+      <div class="card">
+        <div class="pill muted">Top Reasons</div>
+        ${items.join("")}
+      </div>
+    `;
+  }
+
   app.innerHTML = `
     <div class="header">
       <span>🛡️</span>
@@ -42,42 +94,21 @@ function render(state) {
 
     <div class="card" style="background:${theme.bg}; border-color:${theme.color};">
       <div class="pill" style="color:${theme.color};">${theme.label}</div>
-      <div class="score" style="color:${theme.color};">${scan?.score ?? "--"}/100</div>
-      <div class="muted">${status === "scanning" ? "Scanning page..." : "Latest page result"}</div>
+      <div class="score" style="color:${theme.color};">${scan?.score ?? "--"}% safe</div>
+      <div class="muted">${status === "scanning" ? "Scanning page..." : "Safety score"}</div>
       <div class="bar">
         <div class="bar-fill" style="width:${scan?.score ?? 0}%; background:${theme.color};"></div>
       </div>
     </div>
 
-    ${reasons.length ? `
+    ${reasonsHtml}
+
+    ${explanation?.recommended_action ? `
       <div class="card">
-        <div class="pill muted">Top Reasons</div>
-        ${reasons.map((r) => {
-          const text = typeof r === "string" ? r : r.reason;
-          const detail = typeof r === "string" ? "" : (r.detail || "");
-          if (detail) {
-            return `<div class="reason-expandable" data-expanded="false">
-              <div class="reason-header">${escapeHtml(text)}</div>
-              <div class="reason-detail">${escapeHtml(detail)}</div>
-            </div>`;
-          }
-          return `<div class="reason">${escapeHtml(text)}</div>`;
-        }).join("")}
+        <div class="pill muted">Recommended Action</div>
+        <div style="font-size:13px; color:#d1d5db; line-height:1.5;">${escapeHtml(explanation.recommended_action)}</div>
       </div>
     ` : ""}
-
-    <div class="card">
-      <div class="pill muted">AI Analysis</div>
-      ${aiLoading ? `
-        <div class="loading">Generating explanation...</div>
-      ` : scan?.explanation ? `
-        <div style="font-weight:700; margin-bottom:6px;">${escapeHtml(scan.explanation.headline || "")}</div>
-        <div style="font-size:13px; color:#d1d5db; margin-bottom:8px; line-height:1.5;">${escapeHtml(scan.explanation.reason || "")}</div>
-        <div class="muted" style="margin-top:6px; padding-top:8px; border-top:1px solid #1f2937;">${escapeHtml(scan.explanation.recommended_action || "")}</div>
-      ` : `
-        <div class="muted">No AI explanation for this page.</div>
-      `}
-    </div>
 
     ${scan?.url ? `
       <div class="card">
@@ -87,13 +118,19 @@ function render(state) {
     ` : ""}
   `;
 
-  // Wire up expandable reason clicks (CSP-safe, no inline onclick)
+  // Wire up expandable reason clicks (CSP-safe)
   app.querySelectorAll(".reason-expandable").forEach((el) => {
     el.addEventListener("click", () => {
-      el.dataset.expanded = el.dataset.expanded === "true" ? "false" : "true";
       el.classList.toggle("expanded");
     });
   });
+}
+
+function renderExpandable(text, detail) {
+  return `<div class="reason-expandable">
+    <div class="reason-header">${escapeHtml(text)}</div>
+    <div class="reason-detail">${escapeHtml(detail)}</div>
+  </div>`;
 }
 
 async function refresh() {
@@ -101,8 +138,6 @@ async function refresh() {
   render(state);
 }
 
-// Background writes to lastPageResult/scanStatus on both scan completion and tab switch,
-// so this single listener handles both cases.
 chrome.storage.session.onChanged.addListener(refresh);
 
 refresh();
