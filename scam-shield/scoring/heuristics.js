@@ -30,6 +30,14 @@ export function scorePageContext(context) {
   return { score: totalScore, signals };
 }
 
+export function buildTopReasons(signals, limit = 3) {
+  return signals
+    .slice()
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, limit)
+    .map((s) => s.reason);
+}
+
 // Per-link score (used to populate riskMap)
 export function scoreSingleLink(href, pageHostname) {
   try {

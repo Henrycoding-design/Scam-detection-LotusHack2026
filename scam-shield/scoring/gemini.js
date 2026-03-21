@@ -7,11 +7,25 @@
 const GEMINI_API_KEY = "AIzaSyBU6QgPXBpGkxGzTye-rWvk7_BMDdG8fhA"; 
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
+export function buildHeuristicFallbackExplanation({ verdict, reasons }) {
+  return {
+    verdict,
+    headline: verdict === "dangerous" ? "High-risk page detected" : "This page looks suspicious",
+    reason: reasons.length > 0
+      ? reasons.join(". ")
+      : "Several scam signals were detected on this page.",
+    recommended_action: verdict === "dangerous"
+      ? "Leave the page and do not enter any information."
+      : "Review the page carefully before clicking or sharing details.",
+  };
+}
+
 export async function getGeminiExplanation({ url, score, signals, visibleText }) {
   // Only call Gemini if score is suspicious or dangerous (saves quota)
   if (score < 20) return null;
 
   const topSignals = signals
+    .slice()
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 3)
     .map((s) => `- ${s.reason}`)

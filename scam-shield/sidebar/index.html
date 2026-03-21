@@ -2,13 +2,98 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>sidebar</title>
-    <script type="module" crossorigin src="./assets/index-BIwmS8py.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-DykytF2W.css">
+    <title>ScamShield</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #0f172a;
+        color: #e5e7eb;
+      }
+
+      #app {
+        min-height: 100vh;
+        padding: 16px;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+
+      .brand {
+        color: #a78bfa;
+        font-weight: 800;
+        font-size: 16px;
+      }
+
+      .card {
+        background: #111827;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 14px;
+        border: 1px solid #1f2937;
+      }
+
+      .score {
+        font-size: 30px;
+        font-weight: 800;
+      }
+
+      .muted {
+        color: #94a3b8;
+        font-size: 12px;
+      }
+
+      .bar {
+        height: 8px;
+        background: #1f2937;
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 12px;
+      }
+
+      .bar-fill {
+        height: 100%;
+        border-radius: 999px;
+        transition: width 0.4s ease;
+      }
+
+      .reason {
+        background: #111827;
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        font-size: 13px;
+        color: #d1d5db;
+      }
+
+      .pill {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+
+      .loading {
+        color: #fbbf24;
+      }
+
+      .empty {
+        text-align: center;
+        color: #64748b;
+        margin-top: 48px;
+        font-size: 13px;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="app"></div>
+    <script type="module" src="./sidebar.js"></script>
   </body>
-</html>
+  </html>

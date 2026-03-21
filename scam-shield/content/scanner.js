@@ -2,11 +2,33 @@
 
 const ScamShieldScanner = (() => {
   let localRiskMap = {};
+  let lastFingerprint = "";
+  let debounceTimer = null;
+  let isScanning = false;
+  let lastPageResult = null;
 
-  // ── 1. PAGE SNAPSHOT ──────────────────────────────────────────────
+  function normalizeUrl(url) {
+    try {
+      const parsed = new URL(url);
+      parsed.hash = "";
+      return parsed.toString();
+    } catch {
+      return url;
+    }
+  }
+
+  function buildFingerprint(context) {
+    const text = (context.visibleText || "").slice(0, 400);
+    const links = (context.links || [])
+      .slice(0, 10)
+      .map((link) => normalizeUrl(link.href))
+      .join("|");
+    return `${normalizeUrl(context.url)}::${context.title}::${text}::${links}`;
+  }
+
   function extractPageContext() {
     return {
-      url: window.location.href,
+      url: normalizeUrl(window.location.href),
       title: document.title,
       meta: extractMeta(),
       links: extractLinks(),
@@ -28,17 +50,18 @@ const ScamShieldScanner = (() => {
   function extractLinks() {
     return Array.from(document.querySelectorAll("a[href]"))
       .map((el) => ({
-        href: el.href,                          // resolved absolute URL
+        href: normalizeUrl(el.href),
         text: el.innerText.trim().slice(0, 120),
         isVisible: isElementVisible(el),
         hasLoginKeyword: /log.?in|sign.?in|password|verify/i.test(el.innerText),
       }))
-      .filter((l) => l.href.startsWith("http")) // skip mailto:, #anchors, etc.
-      .slice(0, 80);                             // cap at 80 links to keep payload lean
+      .filter((link) => link.href.startsWith("http"))
+      .slice(0, 80);
   }
 
   function extractVisibleText() {
-    // Walk the body, grab text nodes that are actually rendered
+    if (!document.body) return "";
+
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_TEXT,
@@ -46,8 +69,9 @@ const ScamShieldScanner = (() => {
         acceptNode(node) {
           const parent = node.parentElement;
           if (!parent) return NodeFilter.FILTER_REJECT;
-          if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName))
+          if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName)) {
             return NodeFilter.FILTER_REJECT;
+          }
           if (!isElementVisible(parent)) return NodeFilter.FILTER_REJECT;
           return node.textContent.trim()
             ? NodeFilter.FILTER_ACCEPT
@@ -58,9 +82,15 @@ const ScamShieldScanner = (() => {
 
     const chunks = [];
     let node;
-    while ((node = walker.nextNode()) && chunks.join(" ").length < 3000) {
-      chunks.push(node.textContent.trim());
+    let currentLength = 0;
+
+    while ((node = walker.nextNode()) && currentLength < 3000) {
+      const text = node.textContent.trim();
+      if (!text) continue;
+      chunks.push(text);
+      currentLength += text.length + 1;
     }
+
     return chunks.join(" ");
   }
 
@@ -75,22 +105,53 @@ const ScamShieldScanner = (() => {
     );
   }
 
-  // ── 2. MUTATIONOBSERVER — watch for dynamic content ────────────────
-  let debounceTimer = null;
+  function sendToBackground(message) {
+    try {
+      return chrome.runtime.sendMessage(message).catch((err) => {
+        if (err && err.message && !err.message.includes("Extension context invalidated")) {
+          console.warn("[ScamShield] Message error:", err);
+        }
+        return null;
+      });
+    } catch (err) {
+      if (err && err.message && !err.message.includes("Extension context invalidated")) {
+        console.warn("[ScamShield] Send error:", err);
+      }
+      return Promise.resolve(null);
+    }
+  }
+
+  async function runScan(type) {
+    if (isScanning) return;
+    if (!document.body) return;
+
+    const context = extractPageContext();
+    const fingerprint = buildFingerprint(context);
+    if (fingerprint === lastFingerprint) return;
+
+    isScanning = true;
+    lastFingerprint = fingerprint;
+
+    try {
+      await sendToBackground({ type, context });
+    } finally {
+      isScanning = false;
+    }
+  }
 
   function startMutationWatcher() {
+    if (!document.body) return;
+
     const observer = new MutationObserver((mutations) => {
-      // Debounce: don't fire on every tiny DOM tweak (e.g. ad rotation)
       const meaningful = mutations.some(
-        (m) => m.addedNodes.length > 0 || m.type === "childList"
+        (mutation) => mutation.type === "childList" && mutation.addedNodes.length > 0
       );
       if (!meaningful) return;
 
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        const context = extractPageContext();
-        sendToBackground({ type: "PAGE_UPDATED", context });
-      }, 1500); // wait 1.5s after last mutation before re-scanning
+        runScan("PAGE_UPDATED");
+      }, 400);
     });
 
     observer.observe(document.body, {
@@ -99,128 +160,117 @@ const ScamShieldScanner = (() => {
     });
   }
 
-  // ── 3. CLICK INTERCEPTION — pause before risky navigation ─────────
+  function openSidePanel() {
+    sendToBackground({ type: "OPEN_SIDE_PANEL" });
+  }
+
+  function syncPageWarnings(result) {
+    lastPageResult = result;
+
+    if (!window.ScamShieldUI) return;
+
+    if (!result || result.verdict === "safe") {
+      window.ScamShieldUI.removeWarningUI();
+      return;
+    }
+
+    if (result.verdict === "suspicious") {
+      window.ScamShieldUI.showSuspiciousBanner({
+        score: result.score,
+        onOpenPanel: openSidePanel,
+      });
+      return;
+    }
+
+    window.ScamShieldUI.showDangerOverlay({
+      href: result.url,
+      score: result.score,
+      reason: result.explanation?.reason || result.reasons?.[0] || "",
+      onProceed: () => {
+        window.ScamShieldUI.removeWarningUI();
+      },
+    });
+  }
+
   function attachClickInterceptor() {
     document.addEventListener(
       "click",
-      (e) => {
-        const anchor = e.target.closest("a[href]");
+      (event) => {
+        const anchor = event.target.closest("a[href]");
         if (!anchor) return;
 
-        const href = anchor.href;
+        const href = normalizeUrl(anchor.href);
         if (!href.startsWith("http")) return;
 
-        // Check the local risk map synchronously
-        const score = localRiskMap[href];
-        if (score >= 50) {
-          e.preventDefault();
-          e.stopPropagation(); // Stop other click handlers
-          showWarningOverlay(anchor, href, score);
+        const score = localRiskMap[href] ?? 0;
+        if (score < 70) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (anchor.target === "_blank") {
+          anchor.rel = "noopener noreferrer";
         }
+
+        window.ScamShieldUI?.showDangerOverlay({
+          href,
+          score,
+          reason: lastPageResult?.explanation?.reason || lastPageResult?.reasons?.[0] || "",
+          onProceed: () => {
+            if (anchor.target === "_blank") {
+              window.open(href, "_blank", "noopener,noreferrer");
+            } else {
+              window.location.href = href;
+            }
+          },
+        });
       },
-      true // capture phase — fires before the page's own handlers
+      true
     );
   }
 
-  // ── 4. WARNING OVERLAY ────────────────────────────────────────────
-  function showWarningOverlay(anchor, href, score) {
-    // Remove any existing overlay
-    document.getElementById("scamshield-overlay")?.remove();
+  function handleRuntimeMessage(message) {
+    if (message.type === "LINK_RISK_MAP") {
+      localRiskMap = { ...(message.linkRiskMap || {}) };
+      chrome.storage.session.set({ linkRiskMap: localRiskMap }).catch(() => {});
+    }
 
-    const overlay = document.createElement("div");
-    overlay.id = "scamshield-overlay";
-    overlay.innerHTML = `
-      <div style="
-        position: fixed; inset: 0; z-index: 2147483647;
-        background: rgba(0,0,0,0.75); display: flex;
-        align-items: center; justify-content: center;
-        font-family: system-ui, sans-serif;
-      ">
-        <div style="
-          background: #1a1a2e; color: white; padding: 32px;
-          border-radius: 12px; max-width: 480px; width: 90%;
-          border: 2px solid #e63946;
-        ">
-          <div style="font-size: 2rem; margin-bottom: 8px;">⚠️ Dangerous Link</div>
-          <p style="color: #e63946; font-size: 1.1rem; margin: 0 0 12px;">
-            Risk Score: ${score}/100
-          </p>
-          <p style="color: #ccc; word-break: break-all; font-size: 0.85rem;">
-            ${href}
-          </p>
-          <p id="ss-reason" style="color:#aaa; font-size:0.9rem; margin-top:8px;"></p>
-          <div style="display:flex; gap: 12px; margin-top: 24px;">
-            <button id="ss-go-back" style="
-              flex:1; padding: 12px; background: #e63946;
-              border: none; border-radius: 8px; color: white;
-              cursor: pointer; font-size: 1rem;
-            ">← Go Back</button>
-            <button id="ss-ignore" style="
-              flex:1; padding: 12px; background: #444;
-              border: none; border-radius: 8px; color: white;
-              cursor: pointer; font-size: 1rem;
-            ">Proceed Anyway</button>
-          </div>
-        </div>
-      </div>
-    `;
+    if (message.type === "SCAN_STAGE_HEURISTIC") {
+      syncPageWarnings(message.result);
+    }
 
-    document.body.appendChild(overlay);
+    if (message.type === "SCAN_STAGE_AI") {
+      syncPageWarnings(message.result);
 
-    document.getElementById("ss-go-back").onclick = () => overlay.remove();
-    document.getElementById("ss-ignore").onclick = () => {
-      overlay.remove();
-      window.location.href = href;
-    };
+      const overlay = document.getElementById("scamshield-danger-overlay");
+      const reasonEl = overlay?.querySelector("#ss-danger-reason");
+      if (reasonEl && message.result?.explanation?.reason) {
+        reasonEl.textContent = message.result.explanation.reason;
+      }
+    }
   }
 
-  // ── 5. MESSAGE BUS ────────────────────────────────────────────────
-  function sendToBackground(message) {
+  async function restoreSessionState() {
     try {
-      chrome.runtime.sendMessage(message).catch((err) => {
-        // Background service worker may have gone idle — that's fine
-        // Ignore "Extension context invalidated" errors
-        if (err && err.message && !err.message.includes("Extension context invalidated")) {
-          console.warn("[ScamShield] Message error:", err);
-        }
-      });
-    } catch (err) {
-      // Catch synchronous errors if the extension was just reloaded/uninstalled
-      if (err && err.message && !err.message.includes("Extension context invalidated")) {
-        console.warn("[ScamShield] Send error:", err);
+      const state = await chrome.storage.session.get(["linkRiskMap", "lastPageResult", "lastScan"]);
+      const restoredResult = state.lastPageResult || state.lastScan || null;
+      const currentUrl = normalizeUrl(window.location.href);
+
+      if (restoredResult?.url === currentUrl) {
+        localRiskMap = state.linkRiskMap || {};
+        syncPageWarnings(restoredResult);
       }
+    } catch (error) {
+      console.warn("[ScamShield] Failed to restore session state:", error);
     }
   }
 
-  // Listen for risk scores coming back from the background
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "RISK_SCORES") {
-      // Update our local synchronous map
-      localRiskMap = Object.assign(localRiskMap, message.riskMap);
-      // Also save to session storage for other components if needed
-      chrome.storage.session.set({ riskMap: localRiskMap });
-    }
-
-    // NEW: update the overlay if it's already showing
-    if (message.type === "PAGE_EXPLANATION") {
-      const overlay = document.getElementById("scamshield-overlay");
-      if (overlay && message.explanation) {
-        const reasonEl = overlay.querySelector("#ss-reason");
-        if (reasonEl) {
-          reasonEl.textContent = message.explanation.reason;
-        }
-      }
-      // Also store for side panel
-      chrome.storage.session.set({ pageExplanation: message.explanation });
-    }
-  });
-
-  // ── 6. INIT ───────────────────────────────────────────────────────
-  function init() {
-    const context = extractPageContext();
-    sendToBackground({ type: "PAGE_LOADED", context });
-    startMutationWatcher();
+  async function init() {
+    await restoreSessionState();
+    chrome.runtime.onMessage.addListener(handleRuntimeMessage);
     attachClickInterceptor();
+    startMutationWatcher();
+    runScan("PAGE_LOADED");
   }
 
   return { init };
