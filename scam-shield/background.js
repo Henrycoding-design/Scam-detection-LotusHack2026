@@ -191,7 +191,7 @@ async function runAiStage(heuristicResult, context) {
         signals: heuristicResult.signals,
         visibleText: (context.visibleText || "").slice(0, 3000),
       }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("AI timeout")), 2500)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("AI timeout")), 8000)),
     ]) || buildHeuristicFallbackExplanation(heuristicResult);
   } catch {
     return buildHeuristicFallbackExplanation(heuristicResult);

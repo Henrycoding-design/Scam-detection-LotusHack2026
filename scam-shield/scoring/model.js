@@ -39,25 +39,32 @@ export async function getAiExplanation({ url, score, signals, visibleText }) {
     .map((s) => `- ${s.reason}`)
     .join("\n");
 
-  const textSnippet = visibleText.slice(0, 600);
+  const textSnippet = visibleText.slice(0, 1000);
 
-  const prompt = `You are a cybersecurity assistant. Analyze this web page and explain the risk clearly to a non-technical user.
+  const prompt = `You are a cybersecurity assistant explaining web page risks to a non-technical user. Be thorough and educational.
 
 URL: ${url}
 Risk Score: ${score}/100 (${score >= 70 ? "DANGEROUS" : "SUSPICIOUS"})
 
-Top detected signals:
+Detected warning signals:
 ${topSignals}
 
 Page text snippet:
 "${textSnippet}"
 
-Respond with a JSON object only, no markdown, in this exact shape:
+Respond with a JSON object only, no markdown. The "reason" field should be a DETAILED multi-sentence explanation (5-10 sentences) covering:
+1. What specifically was detected and where on the page
+2. Why each signal is dangerous in plain English
+3. What a scammer could do if the user engages with this page
+4. Real-world examples of similar scams if relevant
+5. How to verify whether the page is legitimate or not
+
+JSON shape:
 {
   "verdict": "dangerous" | "suspicious" | "safe",
-  "headline": "one sentence summary under 12 words",
-  "reason": "2-3 sentence plain-English explanation of why this is risky",
-  "recommended_action": "what the user should do right now"
+  "headline": "one sentence summary of the risk",
+  "reason": "detailed multi-paragraph explanation as described above",
+  "recommended_action": "specific immediate steps the user should take"
 }`;
 
   try {
@@ -72,6 +79,7 @@ Respond with a JSON object only, no markdown, in this exact shape:
         model: "stepfun/step-3.5-flash:free",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
+        max_tokens: 1024,
         reasoning: { enabled: false },
       }),
     });

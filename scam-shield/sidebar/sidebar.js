@@ -56,7 +56,7 @@ function render(state) {
           const text = typeof r === "string" ? r : r.reason;
           const detail = typeof r === "string" ? "" : (r.detail || "");
           if (detail) {
-            return `<div class="reason-expandable" onclick="this.classList.toggle('expanded')">
+            return `<div class="reason-expandable" data-expanded="false">
               <div class="reason-header">${escapeHtml(text)}</div>
               <div class="reason-detail">${escapeHtml(detail)}</div>
             </div>`;
@@ -72,8 +72,8 @@ function render(state) {
         <div class="loading">Generating explanation...</div>
       ` : scan?.explanation ? `
         <div style="font-weight:700; margin-bottom:6px;">${escapeHtml(scan.explanation.headline || "")}</div>
-        <div style="font-size:13px; color:#d1d5db; margin-bottom:8px;">${escapeHtml(scan.explanation.reason || "")}</div>
-        <div class="muted">${escapeHtml(scan.explanation.recommended_action || "")}</div>
+        <div style="font-size:13px; color:#d1d5db; margin-bottom:8px; line-height:1.5;">${escapeHtml(scan.explanation.reason || "")}</div>
+        <div class="muted" style="margin-top:6px; padding-top:8px; border-top:1px solid #1f2937;">${escapeHtml(scan.explanation.recommended_action || "")}</div>
       ` : `
         <div class="muted">No AI explanation for this page.</div>
       `}
@@ -86,6 +86,14 @@ function render(state) {
       </div>
     ` : ""}
   `;
+
+  // Wire up expandable reason clicks (CSP-safe, no inline onclick)
+  app.querySelectorAll(".reason-expandable").forEach((el) => {
+    el.addEventListener("click", () => {
+      el.dataset.expanded = el.dataset.expanded === "true" ? "false" : "true";
+      el.classList.toggle("expanded");
+    });
+  });
 }
 
 async function refresh() {
