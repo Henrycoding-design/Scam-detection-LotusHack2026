@@ -128,7 +128,6 @@ const ScamShieldScanner = (() => {
 
   function extractScriptInfo() {
     let inline = 0, jsFuck = false, evalAtob = false, blockRC = false, blockDT = false, miner = false;
-    const all = document.documentElement.outerHTML;
 
     document.querySelectorAll("script").forEach(s => {
       const c = s.textContent || "";
@@ -139,7 +138,7 @@ const ScamShieldScanner = (() => {
       if (/F12|keydown.*F12|debugger\s*;?\s*\}/.test(c)) blockDT = true;
       if (/coinhive|crypto-loot|coinimp|minexmr/i.test(c + s.src)) miner = true;
     });
-    if (!blockRC && all.includes('oncontextmenu')) blockRC = true;
+    if (!blockRC && document.querySelector('[oncontextmenu]')) blockRC = true;
 
     return { inlineScriptCount: inline, hasJsFuck: jsFuck, hasEvalAtob: evalAtob,
              blocksRightClick: blockRC, blocksDevTools: blockDT, hasCryptoMiner: miner };

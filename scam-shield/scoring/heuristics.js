@@ -116,13 +116,14 @@ function checkText(text, title) {
 function checkLinks(links, host) {
   const sigs = [];
   const r = (type, risk, reason, detail) => sigs.push({ type, category: "links", risk, reason, detail });
+  const isExternal = l => { try { return !new URL(l.href).hostname.includes(host); } catch { return false; } };
 
-  const ext = links.filter(l => { try { return !new URL(l.href).hostname.includes(host); } catch { return false; } });
+  const ext = links.filter(isExternal);
   if (links.length >= 3 && ext.length / links.length > 0.7)
     r("high_external_ratio", 35, `${Math.round(ext.length/links.length*100)}% of links go to external domains`,
       "Almost all the links on this page lead to other websites instead of staying on the same domain. Legitimate websites keep most links internal — to their own products, help pages, and resources. A page that primarily exists to send you elsewhere is called a 'link farm' or redirect page, and scammers use them to funnel traffic to phishing sites, malware downloads, or scam offers. Treat any page that sends you somewhere else with suspicion.");
 
-  const loginLinks = links.filter(l => l.hasLoginKeyword && (() => { try { return !new URL(l.href).hostname.includes(host); } catch { return false; } })());
+  const loginLinks = links.filter(l => l.hasLoginKeyword && isExternal(l));
   if (loginLinks.length)
     r("offsite_login_link", 50, `${loginLinks.length} login link(s) pointing elsewhere`,
       "This page contains links with words like 'login', 'sign in', or 'verify' that send you to a completely different website. This is a classic phishing technique — the page looks like it belongs to one company, but clicking the login button takes you to a fake page designed to steal your credentials. Always check where a link actually goes before clicking (hover over it to see the real URL in the bottom-left of your browser).");

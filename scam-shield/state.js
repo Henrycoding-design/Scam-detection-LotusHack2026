@@ -2,11 +2,6 @@ export async function setActiveTabId(tabId) {
   await chrome.storage.session.set({ activeTabId: tabId });
 }
 
-export async function getActiveTabId() {
-  const { activeTabId } = await chrome.storage.session.get("activeTabId");
-  return activeTabId;
-}
-
 export async function setTabResult(tabId, result) {
   await chrome.storage.session.set({ [`scanResult_${tabId}`]: result });
 }
@@ -23,9 +18,6 @@ export async function removeTabResult(tabId) {
 
 export async function updateSidebar(tabId, result, status) {
   const patch = { scanStatus: status, activeTabId: tabId };
-  if (result) {
-    patch.lastPageResult = result;
-    patch.lastScan = result;
-  }
+  if (result) patch.lastPageResult = result;
   await chrome.storage.session.set(patch);
 }

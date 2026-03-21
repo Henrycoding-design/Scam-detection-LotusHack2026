@@ -78,10 +78,3 @@ export function checkBlocklist(hostname) {
 
   return null;
 }
-
-export function getBlocklistStats() {
-  return {
-    loaded: blocklistSet !== null,
-    size: blocklistSet ? blocklistSet.size : 0,
-  };
-}

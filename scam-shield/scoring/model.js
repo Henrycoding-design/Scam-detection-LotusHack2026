@@ -54,7 +54,7 @@ export async function getAiExplanation({ url, score, signals, visibleText }) {
     .map((s) => `- [Risk ${s.risk}/100] ${s.reason}: ${s.detail || "No additional detail."}`)
     .join("\n");
 
-  const textSnippet = visibleText.slice(0, 2000);
+  const textSnippet = visibleText;
 
   const prompt = `You are a cybersecurity analyst explaining findings to a non-technical user. You MUST base your explanation ONLY on the signals listed below. Do NOT invent new risks or reasons not listed.
 

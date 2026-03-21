@@ -216,7 +216,7 @@ async function runAiStage(heuristicResult, context) {
       url: heuristicResult.url,
       score: heuristicResult.score,
       signals: heuristicResult.signals,
-      visibleText: (context.visibleText || "").slice(0, 3000),
+      visibleText: context.visibleText || "",
     }) || buildFallbackExplanation(heuristicResult);
   } catch {
     return buildFallbackExplanation(heuristicResult);
@@ -247,7 +247,7 @@ async function handleScan(context, tabId) {
   }
 
   // Stage 2: Domain age (async, cached)
-  const enrichedResult = await enrichDomainAge(context, heuristicResult, tabId);
+  const enrichedResult = await enrichDomainAge(context, heuristicResult);
   if (scanId !== latestScanIds.get(tabId)) return;
 
   // Stage 3: AI explanation
