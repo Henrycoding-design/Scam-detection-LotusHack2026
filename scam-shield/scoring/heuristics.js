@@ -1,309 +1,177 @@
-// scoring/heuristics.js — Multi-layer scam detection engine
-// Score: 100 = fully safe, 0 = extremely dangerous
+// scoring/heuristics.js — Multi-layer scam detection (100=safe, 0=dangerous)
 
 import { detectHomograph } from "./homograph.js";
-import { checkForms, checkIframes, checkScripts } from "./domAnalysis.js";
-import { checkBlocklist } from "./blocklist.js";
 
-// ── Category weights (must sum to 1.0) ────────────────────────────────
-const CATEGORY_WEIGHTS = {
-  domain: 0.30,   // Domain trust: TLD, brand, homograph, structure
-  content: 0.20,  // Page content: urgency, crypto, sensitive data
-  links: 0.15,    // Link safety: external ratio, login links
-  forms: 0.15,    // Form safety: credential fields, cross-origin
-  behavior: 0.10, // JS behavior: obfuscation, devtools blocking
-  intel: 0.10,    // External intel: blocklist, domain age
-};
+const WEIGHTS = { domain: .30, content: .20, links: .15, forms: .15, behavior: .10, intel: .10 };
+const KNOWN_LOGIN = new Set([
+  "google.com","facebook.com","apple.com","microsoft.com","amazon.com",
+  "paypal.com","netflix.com","twitter.com","x.com","linkedin.com",
+  "github.com","dropbox.com","chase.com","wellsfargo.com","bankofamerica.com",
+  "instagram.com","discord.com","reddit.com","yahoo.com","ebay.com","spotify.com",
+]);
+const KNOWN_EMBEDS = ["youtube.com","vimeo.com","maps.google.com","spotify.com"];
 
-// ── Main scoring function ─────────────────────────────────────────────
-export function scorePageContext(context) {
-  const url = new URL(context.url);
-  const signals = [];
+// ── Main scorer ───────────────────────────────────────────────────────
+export function scorePageContext(ctx) {
+  const url = new URL(ctx.url);
+  const signals = [
+    ...checkDomain(url),
+    ...detectHomograph(ctx.url),
+    ...checkText(ctx.visibleText, ctx.title),
+    ...checkLinks(ctx.links, url.hostname),
+    ...checkMeta(ctx.meta),
+    ...checkForms(ctx.formInfo, url.hostname),
+    ...checkIframes(ctx.iframeInfo),
+    ...checkScripts(ctx.scriptInfo),
+  ];
+  if (ctx.blocklistHit) signals.push(ctx.blocklistHit);
+  if (ctx.domainAgeSignal) signals.push(ctx.domainAgeSignal);
 
-  // Layer 1: Domain checks
-  const domainSignals = checkDomain(url);
-  signals.push(...domainSignals);
+  // Category-weighted: max risk per category → weighted safety
+  const cats = {};
+  for (const s of signals) cats[s.category] = Math.max(cats[s.category] || 0, s.risk);
+  let score = 100;
+  for (const [c, w] of Object.entries(WEIGHTS)) score -= (cats[c] || 0) * w;
+  score = Math.max(0, Math.round(score));
 
-  // Layer 2: Homograph detection
-  const homographSignals = detectHomograph(context.url);
-  signals.push(...homographSignals);
-
-  // Layer 3: Content checks
-  const contentSignals = checkText(context.visibleText, context.title);
-  signals.push(...contentSignals);
-
-  // Layer 4: Link checks
-  const linkSignals = checkLinks(context.links, url.hostname);
-  signals.push(...linkSignals);
-
-  // Layer 5: Meta checks
-  const metaSignals = checkMeta(context.meta);
-  signals.push(...metaSignals);
-
-  // Layer 6: DOM analysis (forms, iframes, scripts)
-  if (context.formInfo) signals.push(...checkForms(context.formInfo, url.hostname));
-  if (context.iframeInfo) signals.push(...checkIframes(context.iframeInfo));
-  if (context.scriptInfo) signals.push(...checkScripts(context.scriptInfo));
-
-  // Layer 7: Blocklist (synchronous, blocklistSet must be loaded)
-  if (context.blocklistHit) {
-    signals.push(context.blocklistHit);
-  }
-
-  // Layer 8: Domain age (may be null if not yet fetched)
-  if (context.domainAgeSignal) {
-    signals.push(context.domainAgeSignal);
-  }
-
-  // Calculate category-level risk scores (max risk per category)
-  const categoryRisks = {};
-  for (const [cat, signals_] of Object.entries(groupByCategory(signals))) {
-    categoryRisks[cat] = Math.max(...signals_.map((s) => s.risk), 0);
-  }
-
-  // Weighted safety score: 100 = safe, 0 = dangerous
-  let safetyScore = 100;
-  for (const [cat, weight] of Object.entries(CATEGORY_WEIGHTS)) {
-    const risk = categoryRisks[cat] || 0;
-    safetyScore -= risk * weight;
-  }
-  safetyScore = Math.max(0, Math.round(safetyScore));
-
-  // Confidence: how many categories contributed signals
-  const categoriesWithSignals = Object.values(categoryRisks).filter((r) => r > 0).length;
-  const totalCategories = Object.keys(CATEGORY_WEIGHTS).length;
-  const confidence = categoriesWithSignals / totalCategories;
-
-  return { score: safetyScore, signals, confidence };
+  const confidence = Object.values(cats).filter(r => r > 0).length / Object.keys(WEIGHTS).length;
+  return { score, signals, confidence };
 }
 
-export function buildTopReasons(signals, limit = 3) {
-  return signals
-    .slice()
-    .sort((a, b) => b.risk - a.risk)
-    .slice(0, limit)
-    .map((s) => ({ reason: s.reason, detail: s.detail || "", risk: s.risk }));
+export function buildTopReasons(signals, n = 3) {
+  return signals.sort((a, b) => b.risk - a.risk).slice(0, n)
+    .map(s => ({ reason: s.reason, detail: s.detail || "", risk: s.risk }));
 }
 
-export function scoreSingleLink(href, pageHostname) {
+export function scoreSingleLink(href, host) {
   try {
-    const url = new URL(href);
-    const signals = checkDomain(url, pageHostname);
-    const homographSignals = detectHomograph(href);
-    signals.push(...homographSignals);
-    const maxRisk = Math.max(...signals.map((s) => s.risk), 0);
-    const safetyScore = Math.max(0, 100 - maxRisk);
-    return { score: safetyScore, signals };
-  } catch {
-    return { score: 100, signals: [] };
-  }
+    const signals = [...checkDomain(new URL(href), host), ...detectHomograph(href)];
+    return { score: Math.max(0, 100 - Math.max(...signals.map(s => s.risk), 0)), signals };
+  } catch { return { score: 100, signals: [] }; }
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────
+// ── Domain ────────────────────────────────────────────────────────────
+function checkDomain(url, pageHost) {
+  const h = url.hostname.toLowerCase(), parts = h.split("."), sigs = [];
+  const r = (type, risk, reason, detail) => sigs.push({ type, category: "domain", risk, reason, detail });
 
-function groupByCategory(signals) {
-  const groups = {};
-  const categoryMap = {
-    digit_in_domain: "domain",
-    excessive_subdomains: "domain",
-    suspicious_tld: "domain",
-    brand_impersonation_link: "domain",
-    brand_impersonation_page: "domain",
-    many_dashes: "domain",
-    ip_address_host: "domain",
-    url_shortener: "domain",
-    mixed_script_hostname: "domain",
-    homograph_brand_impersonation: "domain",
-    non_ascii_hostname: "domain",
-    urgency_language: "content",
-    urgency_language_mild: "content",
-    crypto_scam_language: "content",
-    sensitive_data_request: "content",
-    high_external_link_ratio: "links",
-    offsite_login_link: "links",
-    cross_origin_form: "forms",
-    unexpected_password_form: "forms",
-    excessive_hidden_inputs: "forms",
-    hidden_iframe: "forms",
-    cross_origin_iframe: "forms",
-    jsfuck_obfuscation: "behavior",
-    eval_atob_chain: "behavior",
-    blocks_right_click: "behavior",
-    blocks_devtools: "behavior",
-    crypto_miner: "behavior",
-    excessive_inline_scripts: "behavior",
-    blocklist_hit: "intel",
-    blocklist_parent_hit: "intel",
-    domain_age_very_new: "intel",
-    domain_age_new: "intel",
-    domain_age_young: "intel",
-    no_meta_description: "content",
-    og_domain_mismatch: "content",
-  };
-  for (const signal of signals) {
-    const cat = categoryMap[signal.type] || "content";
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(signal);
-  }
-  return groups;
+  if (/[0-9]/.test(h.replace(/\.[a-z]{2,}$/, "")))
+    r("digit_in_domain", 30, "Domain contains digits mimicking letters",
+      "Scammers register domains like 'paypa1.com' — replacing letters with similar-looking numbers.");
+
+  if (parts.length > 4)
+    r("excessive_subdomains", 35, `Unusual subdomain depth (${parts.length} levels)`,
+      "Legitimate sites rarely use more than 2-3 subdomain levels. Scammers stack them to look official.");
+
+  const tlds = [".xyz",".top",".click",".loan",".tk",".ml",".cc",".biz",".buzz",".surf",".cam",".monster"];
+  if (tlds.some(t => h.endsWith(t)))
+    r("suspicious_tld", 30, `Suspicious TLD: .${h.split(".").pop()}`,
+      "Cheap/free TLDs are commonly abused by scammers.");
+
+  const brands = ["paypal","amazon","google","apple","microsoft","netflix","chase","bank","secure","verify","login"];
+  const brand = brands.find(b => h.includes(b));
+  if (brand && pageHost && !h.includes(pageHost.split(".")[0]))
+    r("brand_impersonation_link", 55, `Link impersonates "${brand}"`,
+      `This link contains '${brand}' but doesn't belong to ${brand}.`);
+  else if (brand && !pageHost && !h.endsWith(`${brand}.com`) && !h.endsWith(`${brand}.net`))
+    r("brand_impersonation_page", 60, `Domain impersonates "${brand}"`,
+      `This domain contains '${brand}' but isn't the official site.`);
+
+  if (h.split("-").length > 3) r("many_dashes", 25, "Domain has many dashes", "Long hyphenated domains are a phishing pattern.");
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) r("ip_address_host", 60, "Link uses raw IP address", "Legitimate sites almost never use IP addresses directly.");
+  if (["bit.ly","tinyurl.com","t.co","ow.ly","rb.gy","cutt.ly","is.gd"].some(s => h.endsWith(s)))
+    r("url_shortener", 20, "URL shortener hides destination", "Scammers mask dangerous links behind shorteners.");
+
+  return sigs;
 }
 
-// ── DOMAIN CHECKS ─────────────────────────────────────────────────────
-function checkDomain(url, pageHostname = null) {
-  const signals = [];
-  const host = url.hostname.toLowerCase();
-
-  // Digit substitution (paypa1.com)
-  if (/[0-9]/.test(host.replace(/\.[a-z]{2,}$/, ""))) {
-    signals.push({ type: "digit_in_domain", risk: 30,
-      reason: "Domain contains digits mimicking letters",
-      detail: "Scammers register domains like 'paypa1.com' or 'g00gle.com' — replacing letters with similar-looking numbers. This tricks people into thinking they're on a real website when they're actually on a fake one designed to steal your information." });
-  }
-
-  // Excessive subdomains
-  const parts = host.split(".");
-  if (parts.length > 4) {
-    signals.push({ type: "excessive_subdomains", risk: 35,
-      reason: `Unusual subdomain depth (${parts.length} levels)`,
-      detail: `This URL has ${parts.length} levels of subdomains. Legitimate websites rarely use more than 2-3 levels. Scammers stack subdomains like 'secure.login.paypal.fake-site.com' to make the URL look official — but the real domain is the last two parts before the slash.` });
-  }
-
-  // Suspicious TLDs
-  const suspiciousTLDs = [".xyz", ".top", ".click", ".loan", ".work", ".gq", ".tk", ".ml", ".cc", ".biz", ".info", ".buzz", ".surf", ".cam", ".monster"];
-  if (suspiciousTLDs.some((tld) => host.endsWith(tld))) {
-    const tld = url.hostname.split(".").pop();
-    signals.push({ type: "suspicious_tld", risk: 30,
-      reason: `Suspicious TLD: .${tld}`,
-      detail: `The domain ends in '.${tld}', which is a top-level domain commonly abused by scammers because it's very cheap or free to register. While not every .${tld} site is malicious, legitimate businesses almost always use .com, .org, or country-specific domains.` });
-  }
-
-  // Brand impersonation
-  const brands = ["paypal", "amazon", "google", "apple", "microsoft",
-                  "netflix", "chase", "wellsfargo", "bank", "secure", "verify", "login", "support"];
-  const matchedBrand = brands.find((b) => host.includes(b));
-
-  if (matchedBrand && pageHostname && !host.includes(pageHostname.split(".")[0])) {
-    signals.push({ type: "brand_impersonation_link", risk: 55,
-      reason: `Link impersonates "${matchedBrand}"`,
-      detail: `This link contains the word '${matchedBrand}' in its URL, but it doesn't actually belong to ${matchedBrand}. Scammers create fake URLs like '${matchedBrand}-secure-login.com' to trick you into entering your password on a phishing page.` });
-  } else if (matchedBrand && !pageHostname && !host.endsWith(`${matchedBrand}.com`) && !host.endsWith(`${matchedBrand}.net`)) {
-    signals.push({ type: "brand_impersonation_page", risk: 60,
-      reason: `Domain impersonates "${matchedBrand}"`,
-      detail: `This website's domain contains '${matchedBrand}' but isn't the official ${matchedBrand}.com site. Scammers register lookalike domains to steal login credentials and personal information.` });
-  }
-
-  // Many dashes
-  if (host.split("-").length > 3) {
-    signals.push({ type: "many_dashes", risk: 25,
-      reason: "Domain contains many dashes (common in phishing)",
-      detail: "This domain has multiple dashes, like 'secure-update-account-info.com'. Scammers use long hyphenated domains to cram in keywords that make the URL look official." });
-  }
-
-  // IP address as hostname
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
-    signals.push({ type: "ip_address_host", risk: 60,
-      reason: "Link goes directly to an IP address",
-      detail: "Instead of a normal domain name, this link uses a raw IP address. Legitimate websites almost never use IP addresses directly. This is a common technique used by scammers hosting temporary phishing pages on compromised servers." });
-  }
-
-  // URL shorteners
-  const shorteners = ["bit.ly", "tinyurl.com", "t.co", "ow.ly", "goo.gl",
-                      "rb.gy", "cutt.ly", "short.io", "is.gd", "v.gd", "buff.ly"];
-  if (shorteners.some((s) => host.endsWith(s))) {
-    signals.push({ type: "url_shortener", risk: 20,
-      reason: "Link uses a URL shortener (destination hidden)",
-      detail: "This link uses a URL shortening service, which hides the real destination. Scammers abuse URL shorteners to mask dangerous links." });
-  }
-
-  return signals;
-}
-
-// ── TEXT CHECKS ───────────────────────────────────────────────────────
+// ── Text ──────────────────────────────────────────────────────────────
 function checkText(text, title) {
-  const signals = [];
-  const combined = `${title} ${text}`.toLowerCase();
+  const t = `${title} ${text}`.toLowerCase(), sigs = [];
+  const r = (type, risk, reason, detail) => sigs.push({ type, category: "content", risk, reason, detail });
 
-  const urgencyRegex = /urgent|immediate action|account suspended|verify your account|confirm your identity|unusual activity|claim your prize|limited time|security alert|account locked|action required/gi;
-  const urgencyMatches = combined.match(urgencyRegex) || [];
-  const uniqueUrgency = new Set(urgencyMatches.map(m => m.toLowerCase()));
+  const urgency = [...new Set((t.match(/urgent|immediate action|account suspended|verify your account|security alert|action required|claim your prize/gi) || []).map(m => m.toLowerCase()))];
+  if (urgency.length >= 2)
+    r("urgency_language", 40, "Multiple urgency/fear tactics detected", `Phrases like "${urgency.join('", "')}" pressure you to act without thinking.`);
+  else if (urgency.length === 1)
+    r("urgency_language_mild", 20, "Urgency language detected", "Scammers use time pressure to prevent critical thinking.");
 
-  if (uniqueUrgency.size >= 2) {
-    const phrases = [...uniqueUrgency].map(p => `"${p}"`).join(", ");
-    signals.push({ type: "urgency_language", risk: 40,
-      reason: "Multiple urgency/fear tactics detected",
-      detail: `This page uses pressure phrases like ${phrases}. Scammers create a false sense of urgency to make you panic and act without thinking.` });
-  } else if (uniqueUrgency.size === 1) {
-    signals.push({ type: "urgency_language_mild", risk: 20,
-      reason: "Mild urgency language detected",
-      detail: "This page uses urgency language to pressure you into acting quickly. Scammers frequently use time pressure to prevent you from thinking critically." });
-  }
+  if (/seed phrase|recovery phrase|wallet connect|airdrop|double your crypto|giveaway/i.test(t))
+    r("crypto_scam", 50, "Crypto/giveaway scam keywords detected", "No legitimate service asks for your seed phrase or gives away free crypto.");
 
-  const cryptoRegex = /seed phrase|recovery phrase|wallet connect|airdrop|double your crypto|giveaway/i;
-  if (cryptoRegex.test(combined)) {
-    signals.push({ type: "crypto_scam_language", risk: 50,
-      reason: "High-risk crypto/giveaway keywords detected",
-      detail: "This page mentions cryptocurrency giveaways, seed phrases, or doubling your crypto. No legitimate service will ever ask for your seed/recovery phrase, and no one gives away free cryptocurrency." });
-  }
+  if (/social security|credit card number|routing number|wire transfer|enter your password/i.test(t))
+    r("sensitive_data_request", 45, "Requests highly sensitive personal info", "Do not enter personal data unless you initiated this through a verified channel.");
 
-  const sensitiveRegex = /social security|credit card number|routing number|wire transfer|enter your password/i;
-  if (sensitiveRegex.test(combined)) {
-    signals.push({ type: "sensitive_data_request", risk: 45,
-      reason: "Requests highly sensitive personal info",
-      detail: "This page asks for extremely sensitive information like Social Security numbers, credit card details, or passwords. If you didn't initiate this request through a verified official channel, do not enter any personal data." });
-  }
-
-  return signals;
+  return sigs;
 }
 
-// ── LINK CHECKS ───────────────────────────────────────────────────────
-function checkLinks(links, pageHostname) {
-  const signals = [];
+// ── Links ─────────────────────────────────────────────────────────────
+function checkLinks(links, host) {
+  const sigs = [];
+  const r = (type, risk, reason, detail) => sigs.push({ type, category: "links", risk, reason, detail });
 
-  const externalLinks = links.filter(
-    (l) => !new URL(l.href).hostname.includes(pageHostname)
-  );
-  const externalRatio = links.length > 0 ? externalLinks.length / links.length : 0;
+  const ext = links.filter(l => { try { return !new URL(l.href).hostname.includes(host); } catch { return false; } });
+  if (links.length >= 3 && ext.length / links.length > 0.7)
+    r("high_external_ratio", 35, `${Math.round(ext.length/links.length*100)}% of links go to external domains`,
+      "This page primarily redirects elsewhere — a common link farm pattern.");
 
-  if (links.length >= 3 && externalRatio > 0.7) {
-    signals.push({ type: "high_external_link_ratio", risk: 35,
-      reason: `${Math.round(externalRatio * 100)}% of links go to external domains`,
-      detail: `Almost all the links on this page lead to other websites instead of staying on the same domain. This suggests this page exists primarily to redirect you elsewhere.` });
-  }
+  const loginLinks = links.filter(l => l.hasLoginKeyword && (() => { try { return !new URL(l.href).hostname.includes(host); } catch { return false; } })());
+  if (loginLinks.length)
+    r("offsite_login_link", 50, `${loginLinks.length} login link(s) pointing elsewhere`,
+      "Login/verify links on this page send you to a different domain — a classic phishing technique.");
 
-  const loginLinks = links.filter(
-    (l) => l.hasLoginKeyword && !new URL(l.href).hostname.includes(pageHostname)
-  );
-  if (loginLinks.length > 0) {
-    signals.push({ type: "offsite_login_link", risk: 50,
-      reason: `${loginLinks.length} login/verify link(s) pointing to external domains`,
-      detail: "This page contains links with words like 'login' or 'verify' that send you to a different website. This is a classic phishing technique." });
-  }
-
-  return signals;
+  return sigs;
 }
 
-// ── META CHECKS ───────────────────────────────────────────────────────
+// ── Meta ──────────────────────────────────────────────────────────────
 function checkMeta(meta) {
-  const signals = [];
+  const sigs = [];
+  if (!meta.description && !meta["og:description"])
+    sigs.push({ type: "no_meta", category: "content", risk: 10, reason: "No description meta tag", detail: "Hastily-created pages often skip metadata." });
+  const og = (meta["og:site_name"] || "").toLowerCase(), ogUrl = meta["og:url"] || "";
+  if (og && ogUrl) try { if (!new URL(ogUrl).hostname.includes(og.replace(/\s+/g, "")))
+    sigs.push({ type: "og_mismatch", category: "content", risk: 25, reason: `OG name "${og}" doesn't match URL`, detail: "Scammers copy metadata from legitimate sites." }); } catch {}
+  return sigs;
+}
 
-  if (!meta["description"] && !meta["og:description"]) {
-    signals.push({ type: "no_meta_description", risk: 10,
-      reason: "Page has no description meta tag (thin content)",
-      detail: "This page has no description metadata. While not dangerous by itself, this often indicates a hastily-created page." });
+// ── DOM: Forms ────────────────────────────────────────────────────────
+function checkForms(forms, host) {
+  if (!forms?.length) return [];
+  const sigs = [];
+  for (const f of forms) {
+    if (f.actionHost && !f.actionHost.includes(host) && !host.includes(f.actionHost))
+      sigs.push({ type: "cross_origin_form", category: "forms", risk: 85, reason: `Form sends data to ${f.actionHost}`, detail: "Form data going to a different domain is a credential harvesting technique." });
+    if (f.hasPassword && ![...KNOWN_LOGIN].some(p => host === p || host.endsWith("." + p)))
+      sigs.push({ type: "unexpected_password", category: "forms", risk: 70, reason: "Password input on non-login site", detail: "Scammers create fake login pages on unrelated domains." });
+    if (f.hiddenInputCount > 3)
+      sigs.push({ type: "hidden_inputs", category: "forms", risk: 50, reason: `${f.hiddenInputCount} hidden input fields`, detail: "Excessive hidden fields often collect data you didn't provide." });
   }
+  return sigs;
+}
 
-  const ogSiteName = (meta["og:site_name"] || "").toLowerCase();
-  const ogUrl = meta["og:url"] || "";
-  if (ogSiteName && ogUrl) {
-    try {
-      const ogHost = new URL(ogUrl).hostname.toLowerCase();
-      if (!ogHost.includes(ogSiteName.replace(/\s+/g, ""))) {
-        signals.push({ type: "og_domain_mismatch", risk: 25,
-          reason: `OG site name "${ogSiteName}" doesn't match its URL`,
-          detail: `This page claims to be "${ogSiteName}" in its metadata, but its URL points to a different website.` });
-      }
-    } catch { /* invalid URL */ }
+// ── DOM: Iframes ──────────────────────────────────────────────────────
+function checkIframes(iframes) {
+  if (!iframes?.length) return [];
+  const sigs = [];
+  for (const f of iframes) {
+    if (f.isHidden)
+      sigs.push({ type: "hidden_iframe", category: "forms", risk: 75, reason: "Hidden iframe loading external content", detail: "Invisible iframes load phishing forms or malicious scripts without your knowledge." });
+    if (f.isCrossOrigin && !f.isHidden && !KNOWN_EMBEDS.some(d => (f.src || "").includes(d)))
+      sigs.push({ type: "unknown_iframe", category: "forms", risk: 35, reason: "Embeds content from unknown domain", detail: "Scammers use cross-origin iframes to inject malicious content." });
   }
+  return sigs;
+}
 
-  return signals;
+// ── DOM: Scripts ──────────────────────────────────────────────────────
+function checkScripts(info) {
+  if (!info) return [];
+  const sigs = [];
+  const r = (type, risk, reason, detail) => sigs.push({ type, category: "behavior", risk, reason, detail });
+  if (info.hasJsFuck) r("jsfuck", 80, "JSFuck obfuscation detected", "Code hidden using only []+!() — almost exclusively malicious.");
+  if (info.hasEvalAtob) r("eval_atob", 75, "Decodes and executes hidden code", "eval(atob(...)) hides malicious payloads from static analysis.");
+  if (info.blocksRightClick) r("blocks_right_click", 55, "Right-click disabled", "Scammers prevent inspection of their page.");
+  if (info.blocksDevTools) r("blocks_devtools", 60, "Developer tools blocked", "No legitimate site needs to block your browser's built-in tools.");
+  if (info.hasCryptoMiner) r("crypto_miner", 85, "Cryptocurrency mining code found", "This page mines crypto using your CPU without consent.");
+  if (info.inlineScriptCount > 15) r("excessive_scripts", 40, `${info.inlineScriptCount} inline scripts`, "Unusually high script count suggests obfuscated code.");
+  return sigs;
 }

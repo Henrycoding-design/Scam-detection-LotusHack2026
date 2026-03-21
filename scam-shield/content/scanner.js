@@ -105,114 +105,44 @@ const ScamShieldScanner = (() => {
 
   function extractFormInfo() {
     const forms = [];
-    const hostname = window.location.hostname;
-    document.querySelectorAll("form").forEach((form) => {
+    document.querySelectorAll("form").forEach(f => {
       let actionHost = "";
-      try { actionHost = form.action ? new URL(form.action).hostname : ""; } catch {}
-
-      forms.push({
-        actionHost,
-        hasPassword: !!form.querySelector('input[type="password"]'),
-        hiddenInputCount: form.querySelectorAll('input[type="hidden"]').length,
-      });
+      try { actionHost = f.action ? new URL(f.action).hostname : ""; } catch {}
+      forms.push({ actionHost, hasPassword: !!f.querySelector('input[type="password"]'),
+                   hiddenInputCount: f.querySelectorAll('input[type="hidden"]').length });
     });
-
-    // Also check for password inputs outside of <form> elements
-    const loosePasswords = document.querySelectorAll('input[type="password"]');
-    if (loosePasswords.length > 0 && forms.length === 0) {
-      forms.push({
-        actionHost: "",
-        hasPassword: true,
-        hiddenInputCount: 0,
-      });
-    }
-
+    if (!forms.length && document.querySelector('input[type="password"]'))
+      forms.push({ actionHost: "", hasPassword: true, hiddenInputCount: 0 });
     return forms;
   }
 
   function extractIframeInfo() {
-    const iframes = [];
-    document.querySelectorAll("iframe").forEach((iframe) => {
-      const style = window.getComputedStyle(iframe);
-      const isHidden =
-        style.display === "none" ||
-        style.visibility === "hidden" ||
-        style.opacity === "0" ||
-        iframe.width === "0" ||
-        iframe.height === "0" ||
-        iframe.offsetWidth === 0 ||
-        iframe.offsetHeight === 0;
-
+    return Array.from(document.querySelectorAll("iframe")).map(f => {
+      const s = window.getComputedStyle(f);
+      const isHidden = s.display === "none" || s.visibility === "hidden" || s.opacity === "0" || f.offsetWidth === 0;
       let isCrossOrigin = false;
-      try {
-        if (iframe.src) {
-          isCrossOrigin = new URL(iframe.src).hostname !== window.location.hostname;
-        }
-      } catch {}
-
-      iframes.push({
-        src: iframe.src || "",
-        isHidden,
-        isCrossOrigin,
-      });
+      try { if (f.src) isCrossOrigin = new URL(f.src).hostname !== window.location.hostname; } catch {}
+      return { src: f.src || "", isHidden, isCrossOrigin };
     });
-    return iframes;
   }
 
   function extractScriptInfo() {
-    const scripts = document.querySelectorAll("script");
-    let inlineCount = 0;
-    let hasJsFuck = false;
-    let hasEvalAtob = false;
-    let blocksRightClick = false;
-    let blocksDevTools = false;
-    let hasCryptoMiner = false;
+    let inline = 0, jsFuck = false, evalAtob = false, blockRC = false, blockDT = false, miner = false;
+    const all = document.documentElement.outerHTML;
 
-    scripts.forEach((script) => {
-      const src = script.src || "";
-      const content = script.textContent || "";
-
-      if (!src) inlineCount++;
-
-      // JSFuck: code that's almost entirely []+!()
-      if (content.length > 200 && /^[\[\]\+\!\(\)\s]+$/.test(content.slice(0, 500))) {
-        hasJsFuck = true;
-      }
-
-      // eval(atob(...))
-      if (/eval\s*\(\s*atob\s*\(/.test(content)) {
-        hasEvalAtob = true;
-      }
-
-      // Right-click disabling
-      if (/addEventListener\s*\(\s*['"]contextmenu['"]/.test(content) && /preventDefault/.test(content)) {
-        blocksRightClick = true;
-      }
-
-      // DevTools blocking
-      if (/F12|devtools|debugger\s*;?\s*\}/.test(content) || /keydown.*F12/i.test(content)) {
-        blocksDevTools = true;
-      }
-
-      // Crypto miner indicators
-      if (/coinhive|crypto-loot|coinimp|minexmr|webassembly.*mine|wss:.*pool/i.test(content + src)) {
-        hasCryptoMiner = true;
-      }
+    document.querySelectorAll("script").forEach(s => {
+      const c = s.textContent || "";
+      if (!s.src) inline++;
+      if (c.length > 200 && /^[\[\]\+\!\(\)\s]+$/.test(c.slice(0, 500))) jsFuck = true;
+      if (/eval\s*\(\s*atob\s*\(/.test(c)) evalAtob = true;
+      if (/addEventListener.*contextmenu.*preventDefault/.test(c)) blockRC = true;
+      if (/F12|keydown.*F12|debugger\s*;?\s*\}/.test(c)) blockDT = true;
+      if (/coinhive|crypto-loot|coinimp|minexmr/i.test(c + s.src)) miner = true;
     });
+    if (!blockRC && all.includes('oncontextmenu')) blockRC = true;
 
-    // Also check inline event handlers for right-click blocking
-    if (!blocksRightClick && document.documentElement.outerHTML.includes('oncontextmenu')) {
-      blocksRightClick = true;
-    }
-
-    return {
-      inlineScriptCount: inlineCount,
-      hasJsFuck,
-      hasEvalAtob,
-      blocksRightClick,
-      blocksDevTools,
-      hasCryptoMiner,
-    };
+    return { inlineScriptCount: inline, hasJsFuck: jsFuck, hasEvalAtob: evalAtob,
+             blocksRightClick: blockRC, blocksDevTools: blockDT, hasCryptoMiner: miner };
   }
 
   function isElementVisible(el) {

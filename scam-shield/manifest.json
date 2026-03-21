@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ScamShield",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Real-time scam detection for every page you visit",
 
   "permissions": [
@@ -30,7 +30,15 @@
   ],
 
   "action": {
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": "icon.png"
+  },
+
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
   },
 
   "side_panel": {

@@ -196,33 +196,18 @@ async function runHeuristicStage(context) {
   };
 }
 
-async function enrichDomainAge(context, heuristicResult, tabId) {
+async function enrichDomainAge(context, heuristicResult) {
   try {
-    const hostname = new URL(context.url).hostname;
-    const ageResult = await checkDomainAge(hostname);
+    const ageResult = await checkDomainAge(new URL(context.url).hostname);
     if (!ageResult?.signal) return heuristicResult;
 
-    // Re-score with domain age signal
-    const enriched = {
-      ...context,
-      blocklistHit: heuristicResult.signals.find((s) => s.type.startsWith("blocklist_")) || null,
-      domainAgeSignal: ageResult.signal,
-    };
-    const { score, signals, confidence } = scorePageContext(enriched);
+    // Append domain age signal and re-score (lightweight — only one new signal)
+    const signals = [...heuristicResult.signals, ageResult.signal];
+    const { score } = scorePageContext({ ...context, domainAgeSignal: ageResult.signal, blocklistHit: null });
     const verdict = score >= 70 ? "safe" : score >= 30 ? "suspicious" : "dangerous";
 
-    return {
-      ...heuristicResult,
-      score,
-      verdict,
-      confidence,
-      reasons: buildTopReasons(signals, 3),
-      signals,
-      linkRiskMap: heuristicResult.linkRiskMap,
-    };
-  } catch {
-    return heuristicResult;
-  }
+    return { ...heuristicResult, score, verdict, reasons: buildTopReasons(signals, 3), signals };
+  } catch { return heuristicResult; }
 }
 
 async function runAiStage(heuristicResult, context) {
