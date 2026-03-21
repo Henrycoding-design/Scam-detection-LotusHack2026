@@ -53,6 +53,8 @@ const ScamShieldScanner = (() => {
       if (!isExternalUrl(el.href)) return r;
       push(el.hasAttribute("download") ? "download" : "link", el.href, el.innerText);
     } else if (t==="form" && hasValidUrl(el.action)) {
+      // Skip same-domain forms — they're internal submissions, not external threats
+      if (!isExternalUrl(el.action)) return r;
       push("form", el.action);
       el.querySelectorAll('button[type="submit"],button:not([type]),input[type="submit"],input[type="image"]').forEach(b => r.push({ elementId: generateElementId(b), type: "submit", url: el.action, text: (b.innerText||b.value||"").trim().slice(0,80), formSubmit: true, isVisible: isElementVisible(b) }));
     } else if (t==="iframe" && hasValidUrl(el.src)) push("iframe", el.src);
@@ -61,7 +63,7 @@ const ScamShieldScanner = (() => {
     else if (t==="input" && el.type==="file") r.push({ elementId: generateElementId(el), type: "fileInput", text: el.getAttribute("accept")||"File upload", isVisible: isElementVisible(el) });
     else if ((t==="button"||t==="input") && (el.type==="submit"||el.type==="image"||(t==="button"&&!el.type))) {
       const f = el.closest("form[action]");
-      if (f && hasValidUrl(f.action)) r.push({ elementId: generateElementId(el), type: "submit", url: f.action, text: (el.innerText||el.value||"").trim().slice(0,80), formSubmit: true, isVisible: isElementVisible(el) });
+      if (f && hasValidUrl(f.action) && isExternalUrl(f.action)) r.push({ elementId: generateElementId(el), type: "submit", url: f.action, text: (el.innerText||el.value||"").trim().slice(0,80), formSubmit: true, isVisible: isElementVisible(el) });
     }
     return r;
   }
