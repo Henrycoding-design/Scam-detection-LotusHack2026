@@ -43,5 +43,12 @@
 
   "side_panel": {
     "default_path": "sidebar/index.html"
-  }
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["icon.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

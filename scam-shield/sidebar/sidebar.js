@@ -7,6 +7,7 @@ const VERDICT_THEME = {
 };
 
 const app = document.getElementById("app");
+const logo = `<img src="${chrome.runtime.getURL("icon.png")}" class="logo" alt="ScamShield">`;
 
 function escapeHtml(value = "") {
   return value
@@ -27,7 +28,7 @@ function render(state) {
   if (!scan && status !== "scanning") {
     app.innerHTML = `
       <div class="header">
-        <span>🛡️</span>
+        ${logo}
         <span class="brand">ScamShield</span>
       </div>
       <div class="empty">Navigate to a page to begin scanning.</div>
@@ -88,7 +89,7 @@ function render(state) {
 
   app.innerHTML = `
     <div class="header">
-      <span>🛡️</span>
+      ${logo}
       <span class="brand">ScamShield</span>
     </div>
 
