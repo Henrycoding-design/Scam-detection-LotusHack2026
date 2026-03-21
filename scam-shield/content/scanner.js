@@ -169,17 +169,18 @@ const ScamShieldScanner = (() => {
             if (off.length) sendToBackground({ type: "NEW_ELEMENTS", elements: off, priority: "low" });
           }
         }
-        // Clean up bubbles for removed elements
+        // Clean up bubbles and risk map for removed elements
         if (removed.length) {
           for (const id of [...activeBubbleIds]) {
             const xpath = getXPathFromId(id);
             if (!evaluateXPath(xpath)) {
               document.getElementById(`ss-bubble-${id}`)?.remove();
               activeBubbleIds.delete(id);
+              delete elementRiskMap[id];
             }
           }
         }
-      }, 1500);
+      }, 500);
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }
@@ -266,7 +267,7 @@ const ScamShieldScanner = (() => {
   });
 
   // ── CLIPBOARD HIJACK MONITOR ────────────────────────────────────────
-  const cryptoAddrRe = /0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[ac-hj-np-z02-9]{11,71}|T[A-Za-z1-9]{33}/i;
+  const cryptoAddrRe = /0x[a-fA-F0-9]{40}|bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|[1-9A-HJ-NP-Za-km-z]{32,44}|T[A-Za-z1-9]{33}|[LM3][a-km-zA-HJ-NP-Z1-9]{26,33}|r[1-9A-HJ-NP-Za-km-z]{25,34}/i;
   let lastCopy = null;
 
   document.addEventListener('copy', () => {

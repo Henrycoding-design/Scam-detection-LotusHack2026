@@ -1,7 +1,6 @@
 // Element data structure shared between background and dashboard
 export type ElementType =
   | 'link'
-  | 'button'
   | 'download'
   | 'fileInput'
   | 'iframe'
@@ -19,7 +18,7 @@ export type ElementType =
 
 export type ElementStatus = 'pending' | 'safe' | 'unsafe' | 'error';
 
-export type ScanSource = 'gsb' | 'vt' | 'ai' | 'openai' | 'veritas' | 'local' | 'none' | 'manual' | null;
+export type ScanSource = 'gsb' | 'vt' | 'openai' | 'veritas' | 'local' | 'none' | 'manual' | null;
 
 export interface ElementData {
   elementId: string;
@@ -35,8 +34,6 @@ export interface ElementData {
   details: string;
   timestamp: number;
   chromeFrameId?: number;
-  vtAnalysisId?: string;
-  vtStatus?: 'submitted' | 'completed' | 'error';
   matchedPhrases?: string[];
   contextSnippet?: string;
 }

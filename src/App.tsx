@@ -5,7 +5,7 @@ import StatsRow from './components/StatsRow';
 import ElementCard from './components/ElementCard';
 import { getStatusColor } from './utils';
 
-type FilterType = 'all' | 'unsafe' | 'safe' | 'pending';
+type FilterType = 'all' | 'unsafe' | 'safe' | 'pending' | 'error';
 
 export default function App() {
   const [elements, setElements] = useState<Map<string, ElementData>>(new Map<string, ElementData>());
@@ -19,6 +19,7 @@ export default function App() {
   useEffect(() => {
     let connection: ReturnType<typeof connectToBackground> | null = null;
     let currentTabId: number | null = null;
+    let tabChangeListener: ((activeInfo: any) => void) | null = null;
 
     const init = async () => {
       try {
@@ -50,14 +51,15 @@ export default function App() {
         });
 
         // Listen for active tab changes
-        chrome.tabs.onActivated.addListener((activeInfo) => {
+        tabChangeListener = (activeInfo: any) => {
           if (activeInfo.tabId !== currentTabId) {
             currentTabId = activeInfo.tabId;
             setTabId(activeInfo.tabId);
-            setElements(new Map()); // Clear immediately for responsiveness
+            setElements(new Map());
             connection?.port.postMessage({ type: 'ACTIVE_TAB_CHANGED', tabId: activeInfo.tabId });
           }
-        });
+        };
+        chrome.tabs.onActivated.addListener(tabChangeListener);
       } catch (err) {
         setError('Failed to connect to ScamShield background script. Is the extension loaded?');
         console.error(err);
@@ -65,7 +67,11 @@ export default function App() {
     };
 
     init();
-    return () => connection?.disconnect();
+    return () => {
+      connection?.disconnect();
+      setConnected(false);
+      if (tabChangeListener) chrome.tabs.onActivated.removeListener(tabChangeListener);
+    };
   }, []);
 
   // Compute stats (memoized on elements map reference)
@@ -130,7 +136,7 @@ export default function App() {
 
       {/* Filters */}
       <div className="flex gap-2 mb-4 flex-wrap">
-        {(['all', 'unsafe', 'safe', 'pending'] as const).map(f => (
+        {(['all', 'unsafe', 'safe', 'pending', 'error'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -141,7 +147,8 @@ export default function App() {
             }`}
           >
             {f.charAt(0).toUpperCase() + f.slice(1)}
-            {f !== 'all' && ` (${stats[f]})`}
+            {f !== 'all' && f !== 'error' && ` (${stats[f]})`}
+            {f === 'error' && ` (${stats.errors})`}
           </button>
         ))}
       </div>

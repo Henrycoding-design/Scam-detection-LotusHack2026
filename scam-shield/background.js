@@ -108,7 +108,16 @@ async function updateElement(tabId, elementId, updates) {
   };
 }
 
+// Track last clear time per tab to deduplicate rapid clears
+const lastClearTime = new Map();
+
 async function clearTabData(tabId) {
+  const now = Date.now();
+  const last = lastClearTime.get(tabId);
+  // Deduplicate: skip if cleared within the last 200ms
+  if (last && now - last < 200) return;
+  lastClearTime.set(tabId, now);
+
   const database = await openDB();
   const tx = database.transaction(STORE_NAME, "readwrite");
   const store = tx.objectStore(STORE_NAME);
@@ -349,6 +358,8 @@ async function handleTextThreats(threats, pageUrl, pageText, tabId, frameId) {
   const openai = openaiResult.status === 'fulfilled' ? openaiResult.value : { flagged: false, score: 0 };
   const veritas = veritasResult.status === 'fulfilled' ? veritasResult.value : { isSpam: false, score: 0 };
 
+  // Build all threat records first, then write in a single transaction
+  const records = [];
   for (const threat of threats) {
     const localScore = threat.riskScore || 0;
     const apiMax = Math.max(openai.score || 0, veritas.score || 0);
@@ -369,14 +380,9 @@ async function handleTextThreats(threats, pageUrl, pageText, tabId, frameId) {
       details = threat.matchedPhrases?.join(', ') || threat.text || '';
     }
 
-    const elId = threat.elementId;
-    const database = await openDB();
-    const key = `${tabId}:${elId}`;
-    const tx = database.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    store.delete(key);
-    store.put({
-      key, tabId, elementId: elId, type: threat.type,
+    records.push({
+      key: `${tabId}:${threat.elementId}`,
+      tabId, elementId: threat.elementId, type: threat.type,
       url: null, text: threat.text || '',
       timestamp: Date.now(), status, riskScore: combined,
       shortExplanation: status === 'unsafe'
@@ -390,21 +396,32 @@ async function handleTextThreats(threats, pageUrl, pageText, tabId, frameId) {
       matchedPhrases: threat.matchedPhrases || [],
       contextSnippet: threat.contextSnippet || '',
     });
-    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+  }
 
-    // Broadcast to dashboard
-    const dashSet = dashboardPorts.get(tabId);
-    if (dashSet) {
-      const record = {
-        elementId: elId, tabId, type: threat.type, text: threat.text || '',
-        status, riskScore: combined, source, details: details || threat.contextSnippet || '',
-        shortExplanation: status === 'unsafe' ? `Detected: ${threat.matchedPhrases?.[0] || threat.type}` : 'No threats detected',
-        longExplanation: status === 'unsafe' ? `Flagged: ${details || 'suspicious patterns'}` : 'Content passed checks.',
-        timestamp: Date.now(), matchedPhrases: threat.matchedPhrases || [],
-        contextSnippet: threat.contextSnippet || '',
+  // Write all records in a single transaction
+  const database = await openDB();
+  const tx = database.transaction(STORE_NAME, "readwrite");
+  const store = tx.objectStore(STORE_NAME);
+  for (const rec of records) {
+    store.delete(rec.key);
+    store.put(rec);
+  }
+  await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+
+  // Broadcast all to dashboard in one batch
+  const dashSet = dashboardPorts.get(tabId);
+  if (dashSet) {
+    for (const rec of records) {
+      const broadcast = {
+        elementId: rec.elementId, tabId, type: rec.type, text: rec.text,
+        status: rec.status, riskScore: rec.riskScore, source: rec.source,
+        details: rec.details, shortExplanation: rec.shortExplanation,
+        longExplanation: rec.status === 'unsafe' ? `Flagged: ${rec.details || 'suspicious patterns'}` : 'Content passed checks.',
+        timestamp: rec.timestamp, matchedPhrases: rec.matchedPhrases,
+        contextSnippet: rec.contextSnippet,
       };
       dashSet.forEach(port => {
-        try { port.postMessage({ type: 'ELEMENT_UPDATE', elementId: elId, data: record }); } catch {}
+        try { port.postMessage({ type: 'ELEMENT_UPDATE', elementId: rec.elementId, data: broadcast }); } catch {}
       });
     }
   }
@@ -476,16 +493,24 @@ async function storeAndDiffElements(elements, tabId, frameId) {
   };
 }
 
+// Fire-and-forget AI explanation update for unsafe elements
+function fireAIExplanation(tabId, element, contextText, details) {
+  if (!contextText) return;
+  generateAIExplanation(element.url, element.type, contextText, details)
+    .then(ai => updateElement(tabId, element.elementId, ai))
+    .catch(() => {});
+}
+
 // Shared: concurrent batch scanning for URL elements, mark non-URL as safe
 async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
-  // Process non-URL elements (submit buttons without standalone URL)
-  for (const element of nonUrlElements) {
-    await updateElement(tabId, element.elementId, {
+  // Process non-URL elements concurrently (form submissions without standalone URL)
+  await Promise.allSettled(nonUrlElements.map(element =>
+    updateElement(tabId, element.elementId, {
       status: "safe", riskScore: 0, source: "manual",
       shortExplanation: "Safe (form submission, no standalone URL)",
       longExplanation: "This element submits to a form action that has been scanned separately."
-    });
-  }
+    })
+  ));
 
   // Process ALL URL elements concurrently in batches (all batches fire in parallel)
   const BATCH_SIZE = 20;
@@ -506,34 +531,21 @@ async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
 
       // If GSB flags unsafe, mark immediately — don't wait for VT
       if (gsb.status === "unsafe") {
-        const update = {
-          status: "unsafe",
-          riskScore: gsb.score,
-          source: "gsb",
+        await updateElement(tabId, element.elementId, {
+          status: "unsafe", riskScore: gsb.score, source: "gsb",
           details: `GSB: ${gsb.details}`,
           shortExplanation: `Dangerous: ${gsb.details}`,
           longExplanation: `This ${element.type} has been flagged by Google Safe Browsing: ${gsb.details}. It is recommended to avoid interacting with it.`
-        };
-        await updateElement(tabId, element.elementId, update);
-        // Fire-and-forget AI explanation for the popup (only if page context available)
-        if (contextText) {
-          generateAIExplanation(element.url, element.type, contextText, update.details)
-            .then(ai => updateElement(tabId, element.elementId, ai))
-            .catch(() => {});
-        }
-        // Still check VT result once in background for additional data
-        if (vt.status === "pending" && vt.analysisId) {
-          scheduleVTCheck(tabId, element.elementId, vt.analysisId, 5000);
-        }
+        });
+        fireAIExplanation(tabId, element, contextText, `GSB: ${gsb.details}`);
+        if (vt.status === "pending" && vt.analysisId) scheduleVTCheck(tabId, element.elementId, vt.analysisId, 5000);
         return;
       }
 
-      // If VT submitted successfully, mark as pending and poll in background
+      // If VT submitted successfully, mark as pending and check result later
       if (vt.status === "pending" && vt.analysisId) {
         await updateElement(tabId, element.elementId, {
-          status: "pending",
-          riskScore: 0,
-          source: "vt",
+          status: "pending", riskScore: 0, source: "vt",
           shortExplanation: "Scanning via VirusTotal...",
           longExplanation: "This element is being analyzed by VirusTotal. Results will appear shortly."
         });
@@ -541,39 +553,20 @@ async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
         return;
       }
 
-      // Both scanners returned final results
-      const details = [];
-      let source = "none";
-
+      // Both scanners returned final results — check if either flagged unsafe
       if (vt.status === "unsafe") {
-        details.push(`VT: ${vt.details}`);
-        source = "vt";
-      }
-      if (gsb.status === "safe" || vt.status === "safe") {
-        source = gsb.status === "safe" ? "gsb" : "vt";
-      }
-
-      if (vt.status === "unsafe") {
-        const update = {
-          status: "unsafe",
-          riskScore: vt.score,
-          source,
-          details: details.join(" | "),
+        const details = `VT: ${vt.details}`;
+        await updateElement(tabId, element.elementId, {
+          status: "unsafe", riskScore: vt.score, source: "vt",
+          details,
           shortExplanation: `Dangerous: ${vt.details}`,
-          longExplanation: `This ${element.type} has been flagged by security services: ${details.join(". ")}. It is recommended to avoid interacting with it.`
-        };
-        await updateElement(tabId, element.elementId, update);
-        // Fire-and-forget AI explanation for the popup (only if page context available)
-        if (contextText) {
-          generateAIExplanation(element.url, element.type, contextText, update.details)
-            .then(ai => updateElement(tabId, element.elementId, ai))
-            .catch(() => {});
-        }
+          longExplanation: `This ${element.type} has been flagged by security services: ${details}. It is recommended to avoid interacting with it.`
+        });
+        fireAIExplanation(tabId, element, contextText, details);
       } else {
         await updateElement(tabId, element.elementId, {
-          status: "safe",
-          riskScore: 0,
-          source: source || "manual",
+          status: "safe", riskScore: 0,
+          source: gsb.status === "safe" ? "gsb" : vt.status === "safe" ? "vt" : "manual",
           shortExplanation: "Safe",
           longExplanation: "This element passed security checks and appears safe."
         });
@@ -766,6 +759,7 @@ chrome.webNavigation?.onBeforeNavigate?.addListener?.((details) => {
 }, { url: [{ urlPrefix: "file://" }] });
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearTabData(tabId);
+  lastClearTime.delete(tabId);
 });
 
 // Clear tab data on full page navigations (replaces tabs.onUpdated)

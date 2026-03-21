@@ -1,6 +1,7 @@
 // Shared utility functions for the dashboard
+import type { ElementStatus, ElementType } from './types';
 
-export function getStatusColor(status: string): string {
+export function getStatusColor(status: ElementStatus): string {
   switch (status) {
     case 'safe': return 'text-green-400';
     case 'unsafe': return 'text-red-400';
@@ -16,10 +17,9 @@ export function getRiskColor(score: number): string {
   return 'bg-green-500';
 }
 
-export function getTypeIcon(type: string): string {
+export function getTypeIcon(type: ElementType): string {
   switch (type) {
     case 'link': return '🔗';
-    case 'button': return '🔘';
     case 'download': return '⬇️';
     case 'fileInput': return '📁';
     case 'iframe': return '🖼️';
