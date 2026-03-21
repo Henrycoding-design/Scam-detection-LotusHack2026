@@ -42,11 +42,17 @@ const ScamShieldScanner = (() => {
   function sendToBackground(message) { chrome.runtime.sendMessage(message).catch(() => {}); }
 
   // ── ELEMENT EXTRACTION ──────────────────────────────────────────────
+  const currentHost = location.hostname;
+  function isExternalUrl(url) { try { return new URL(url).hostname !== currentHost; } catch { return true; } }
+
   function extractSingle(el) {
     const t = el.tagName.toLowerCase(), r = [];
     const push = (type, url, text) => r.push({ elementId: generateElementId(el), type, url, text: (text||"").trim().slice(0,120), isVisible: isElementVisible(el) });
-    if (t==="a" && hasValidUrl(el.href)) push(el.hasAttribute("download") ? "download" : "link", el.href, el.innerText);
-    else if (t==="form" && hasValidUrl(el.action)) {
+    if (t==="a" && hasValidUrl(el.href)) {
+      // Skip same-domain links — they're internal navigation, not external threats
+      if (!isExternalUrl(el.href)) return r;
+      push(el.hasAttribute("download") ? "download" : "link", el.href, el.innerText);
+    } else if (t==="form" && hasValidUrl(el.action)) {
       push("form", el.action);
       el.querySelectorAll('button[type="submit"],button:not([type]),input[type="submit"],input[type="image"]').forEach(b => r.push({ elementId: generateElementId(b), type: "submit", url: el.action, text: (b.innerText||b.value||"").trim().slice(0,80), formSubmit: true, isVisible: isElementVisible(b) }));
     } else if (t==="iframe" && hasValidUrl(el.src)) push("iframe", el.src);

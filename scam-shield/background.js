@@ -108,9 +108,6 @@ async function updateElement(tabId, elementId, updates) {
   };
 }
 
-// Track last clear time per tab to deduplicate rapid clears
-const lastClearTime = new Map();
-
 // Clean up VT alarms for a tab
 async function clearTabAlarms(tabId) {
   const alarms = await chrome.alarms.getAll();
@@ -120,12 +117,6 @@ async function clearTabAlarms(tabId) {
 }
 
 async function clearTabData(tabId) {
-  const now = Date.now();
-  const last = lastClearTime.get(tabId);
-  // Deduplicate: skip if cleared within the last 200ms
-  if (last && now - last < 200) return;
-  lastClearTime.set(tabId, now);
-
   const database = await openDB();
   const tx = database.transaction(STORE_NAME, "readwrite");
   const store = tx.objectStore(STORE_NAME);
@@ -749,7 +740,6 @@ chrome.webNavigation?.onBeforeNavigate?.addListener((details) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearTabData(tabId);
   clearTabAlarms(tabId);
-  lastClearTime.delete(tabId);
 });
 
 // Clear tab data on full page navigations (replaces tabs.onUpdated)
