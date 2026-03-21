@@ -10,14 +10,17 @@
     "storage",
     "sidePanel",
     "tabs",
-    "downloads"
+    "downloads",
+    "webNavigation"
   ],
 
   "host_permissions": [
     "<all_urls>",
     "https://safebrowsing.googleapis.com/*",
     "https://www.virustotal.com/*",
-    "https://openrouter.ai/*"
+    "https://openrouter.ai/*",
+    "https://api.openai.com/*",
+    "https://spam.audent.ai/*"
   ],
 
   "background": {
@@ -38,6 +41,6 @@
   },
 
   "side_panel": {
-    "default_path": "dashboard.html"
+    "default_path": "assets/dashboard.html"
   }
 }

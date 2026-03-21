@@ -9,12 +9,17 @@ export type ElementType =
   | 'audio'
   | 'embed'
   | 'object'
+  | 'submit'
   | 'form'
-  | 'clickable';
+  | 'clickable'
+  | 'textThreat'
+  | 'cryptoAddress'
+  | 'clipboardHijack'
+  | 'phishingForm';
 
 export type ElementStatus = 'pending' | 'safe' | 'unsafe' | 'error';
 
-export type ScanSource = 'gsb' | 'vt' | 'ai' | 'none' | 'manual' | null;
+export type ScanSource = 'gsb' | 'vt' | 'ai' | 'openai' | 'veritas' | 'local' | 'none' | 'manual' | null;
 
 export interface ElementData {
   elementId: string;
@@ -32,6 +37,8 @@ export interface ElementData {
   chromeFrameId?: number;
   vtAnalysisId?: string;
   vtStatus?: 'submitted' | 'completed' | 'error';
+  matchedPhrases?: string[];
+  contextSnippet?: string;
 }
 
 export interface PageContext {
@@ -45,6 +52,5 @@ export interface PageContext {
     url?: string;
     text: string;
     isVisible: boolean;
-    hasLoginKeyword?: boolean;
   }>;
 }

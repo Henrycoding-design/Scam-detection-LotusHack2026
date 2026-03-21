@@ -1,16 +1,19 @@
 // background.js
 // Built-in API keys (server-side, not user-visible)
 const API_KEYS = {
-  GOOGLE_SAFE_BROWSING: "BUILTIN_GSB_KEY_PLACEHOLDER", // Replace with actual GSB API key
-  VIRUSTOTAL: "BUILTIN_VT_KEY_PLACEHOLDER", // Replace with actual VT API key
-  OPENROUTER: "BUILTIN_OPENROUTER_KEY_PLACEHOLDER" // Replace with actual OpenRouter key
+  GOOGLE_SAFE_BROWSING: "BUILTIN_GSB_KEY_PLACEHOLDER",
+  VIRUSTOTAL: "BUILTIN_VT_KEY_PLACEHOLDER",
+  OPENROUTER: "BUILTIN_OPENROUTER_KEY_PLACEHOLDER",
+  OPENAI: "BUILTIN_OPENAI_KEY_PLACEHOLDER",
 };
 
 // Free tier URLs (manifest needs host_permissions for these)
 const APIS = {
   GSB: "https://safebrowsing.googleapis.com/v4/threatMatches:find",
   VT_URL: "https://www.virustotal.com/api/v3/urls",
-  OPENROUTER: "https://openrouter.ai/api/v1/chat/completions"
+  OPENROUTER: "https://openrouter.ai/api/v1/chat/completions",
+  OPENAI_MOD: "https://api.openai.com/v1/moderations",
+  VERITAS: "https://spam.audent.ai/check",
 };
 
 // Allow content scripts to access session storage
@@ -283,7 +286,123 @@ Return JSON: {"short": "...", "long": "..."}. Be concise and factual.`;
   }
 }
 
-// Main scan handler with concurrency
+// OpenAI Moderation API — FREE, unlimited, ~200ms
+async function checkOpenAIModeration(text) {
+  try {
+    if (!text || API_KEYS.OPENAI === "BUILTIN_OPENAI_KEY_PLACEHOLDER")
+      return { flagged: false, score: 0, categories: {} };
+    const res = await fetch(APIS.OPENAI_MOD, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEYS.OPENAI}` },
+      body: JSON.stringify({ input: text.slice(0, 2000), model: "omni-moderation-latest" }),
+    });
+    if (!res.ok) return { flagged: false, score: 0, categories: {} };
+    const data = await res.json();
+    const r = data.results?.[0] || {};
+    const cats = r.categories || {};
+    const flaggedCats = Object.entries(cats).filter(([, v]) => v).map(([k]) => k);
+    return {
+      flagged: r.flagged || false,
+      score: r.flagged ? 85 : 0,
+      categories: flaggedCats,
+      details: flaggedCats.join(', '),
+    };
+  } catch { return { flagged: false, score: 0, categories: {} }; }
+}
+
+// Veritas AI (otis model) — 500 free requests/day, ~400ms
+async function checkVeritasAI(text) {
+  try {
+    const res = await fetch(APIS.VERITAS, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text.slice(0, 1500), model: "otis" }),
+    });
+    if (!res.ok) return { isSpam: false, score: 0 };
+    const data = await res.json();
+    const spamScore = data.spam_score ?? data.score ?? 0;
+    return {
+      isSpam: spamScore > 0.6,
+      score: Math.round(spamScore * 100),
+      details: data.prediction || data.label || '',
+    };
+  } catch { return { isSpam: false, score: 0 }; }
+}
+
+// Handle text threats from content script — store + escalate to APIs
+async function handleTextThreats(threats, pageUrl, pageText, tabId, frameId) {
+  if (!tabId || !threats?.length) return;
+  console.log(`[ScamShield] Text threats: ${threats.length} from ${pageUrl}`);
+
+  // Run API checks concurrently on the page text
+  const [openaiResult, veritasResult] = await Promise.allSettled([
+    pageText ? checkOpenAIModeration(pageText) : Promise.resolve({ flagged: false, score: 0 }),
+    pageText ? checkVeritasAI(pageText) : Promise.resolve({ isSpam: false, score: 0 }),
+  ]);
+  const openai = openaiResult.status === 'fulfilled' ? openaiResult.value : { flagged: false, score: 0 };
+  const veritas = veritasResult.status === 'fulfilled' ? veritasResult.value : { isSpam: false, score: 0 };
+
+  for (const threat of threats) {
+    const localScore = threat.riskScore || 0;
+    const apiMax = Math.max(openai.score || 0, veritas.score || 0);
+    const combined = Math.min(100, Math.round(localScore * 0.6 + apiMax * 0.4));
+
+    let status = 'safe', source = 'local', details = '';
+    if (localScore >= 80 || openai.flagged || veritas.isSpam) {
+      status = 'unsafe';
+      source = openai.flagged ? 'openai' : veritas.isSpam ? 'veritas' : 'local';
+      details = [
+        openai.flagged ? `OpenAI: ${openai.details}` : '',
+        veritas.isSpam ? `Veritas: ${veritas.details}` : '',
+        threat.matchedPhrases?.length ? `Patterns: ${threat.matchedPhrases.join(', ')}` : '',
+      ].filter(Boolean).join(' | ');
+    } else if (localScore >= 40) {
+      status = 'unsafe';
+      source = 'local';
+      details = threat.matchedPhrases?.join(', ') || threat.text || '';
+    }
+
+    const elId = threat.elementId;
+    const database = await openDB();
+    const key = `${tabId}:${elId}`;
+    const tx = database.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    store.delete(key);
+    store.put({
+      key, tabId, elementId: elId, type: threat.type,
+      url: null, text: threat.text || '',
+      timestamp: Date.now(), status, riskScore: combined,
+      shortExplanation: status === 'unsafe'
+        ? `Detected: ${threat.matchedPhrases?.[0] || threat.type}`
+        : 'No threats detected',
+      longExplanation: status === 'unsafe'
+        ? `This ${threat.type.replace(/([A-Z])/g, ' $1').toLowerCase()} was flagged: ${details || 'suspicious patterns found'}. Exercise caution.`
+        : 'Content passed text analysis checks.',
+      source, details: details || threat.contextSnippet || '',
+      chromeFrameId: frameId,
+      matchedPhrases: threat.matchedPhrases || [],
+      contextSnippet: threat.contextSnippet || '',
+    });
+    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+
+    // Broadcast to dashboard
+    const dashSet = dashboardPorts.get(tabId);
+    if (dashSet) {
+      const record = {
+        elementId: elId, tabId, type: threat.type, text: threat.text || '',
+        status, riskScore: combined, source, details: details || threat.contextSnippet || '',
+        shortExplanation: status === 'unsafe' ? `Detected: ${threat.matchedPhrases?.[0] || threat.type}` : 'No threats detected',
+        longExplanation: status === 'unsafe' ? `Flagged: ${details || 'suspicious patterns'}` : 'Content passed checks.',
+        timestamp: Date.now(), matchedPhrases: threat.matchedPhrases || [],
+        contextSnippet: threat.contextSnippet || '',
+      };
+      dashSet.forEach(port => {
+        try { port.postMessage({ type: 'ELEMENT_UPDATE', elementId: elId, data: record }); } catch {}
+      });
+    }
+  }
+}
+
 async function handleScan(context, tabId, frameId) {
   if (!tabId) {
     console.warn("[ScamShield] No tabId, cannot send updates");
@@ -293,62 +412,74 @@ async function handleScan(context, tabId, frameId) {
   console.log("[ScamShield] Scanning:", context.url);
   console.log(`  → ${context.elements.length} elements found`);
   
+  const scanned = await storeAndDiffElements(context.elements, tabId, frameId);
+  await scanElements(scanned.urlElements, scanned.nonUrlElements, tabId, context.visibleText);
+}
+
+// Handle incremental elements from MutationObserver (NEW_ELEMENTS message)
+async function handleNewElements(elements, tabId, frameId) {
+  if (!tabId || !elements || elements.length === 0) return;
+  console.log(`[ScamShield] Incremental: ${elements.length} new elements`);
+
+  const scanned = await storeAndDiffElements(elements, tabId, frameId);
+  // No visibleText for incremental scans — skip AI explanations, rely on GSB/VT
+  await scanElements(scanned.urlElements, scanned.nonUrlElements, tabId, "");
+}
+
+// Shared: diff against IndexedDB, store pending records, return categorized elements
+async function storeAndDiffElements(elements, tabId, frameId) {
   const database = await openDB();
-  
-  // Get all existing elements for this tab from IndexedDB
   const existingMap = await getAllElementsForTab(tabId);
-  
-  // Determine which elements need scanning (new or changed)
-  const elementsToScan = context.elements.filter(el => {
+
+  const elementsToScan = elements.filter(el => {
     const existing = existingMap.get(el.elementId);
     if (!existing) return true;
-    // If pending, rescan to ensure completion
     if (existing.status === "pending") return true;
-    // If final status but properties changed, rescan
     if (existing.status === "safe" || existing.status === "unsafe") {
-      if (existing.url !== (el.url || null) || existing.text !== (el.text || "")) {
-        return true;
-      }
+      if (existing.url !== (el.url || null) || existing.text !== (el.text || "")) return true;
       return false;
     }
     return true;
   });
-  
+
   console.log(`[ScamShield] Elements to scan: ${elementsToScan.length} (new/changed)`);
-  
-  // Store pending records for elementsToScan (overwrite any existing)
+
+  // Store pending records
   const tx = database.transaction(STORE_NAME, "readwrite");
   const store = tx.objectStore(STORE_NAME);
   for (const el of elementsToScan) {
-    // Delete any existing record for this elementId
     store.delete(`${tabId}:${el.elementId}`);
-    // Put new pending record with frameId
     store.put({
       key: `${tabId}:${el.elementId}`,
-      tabId,
-      elementId: el.elementId,
-      type: el.type,
-      url: el.url || null,
-      text: el.text || "",
-      timestamp: Date.now(),
-      status: "pending",
-      riskScore: 0,
-      shortExplanation: "",
-      longExplanation: "",
-      source: null,
-      details: "",
-      chromeFrameId: frameId
+      tabId, elementId: el.elementId, type: el.type,
+      url: el.url || null, text: el.text || "",
+      timestamp: Date.now(), status: "pending", riskScore: 0,
+      shortExplanation: "", longExplanation: "",
+      source: null, details: "", chromeFrameId: frameId
     });
   }
   await new Promise((resolve, reject) => {
     tx.oncomplete = resolve;
     tx.onerror = reject;
   });
-  
-  // Separate by URL availability
-  const urlElements = elementsToScan.filter(el => el.url);
-  const nonUrlElements = elementsToScan.filter(el => !el.url);
-  
+
+  return {
+    urlElements: elementsToScan.filter(el => el.url),
+    nonUrlElements: elementsToScan.filter(el => !el.url)
+  };
+}
+
+// Shared: concurrent batch scanning for URL elements, mark non-URL as safe
+async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
+  // Process non-URL elements (submit buttons without standalone URL)
+  for (const element of nonUrlElements) {
+    await updateElement(tabId, element.elementId, {
+      status: "safe", riskScore: 0, source: "manual",
+      shortExplanation: "Safe (form submission, no standalone URL)",
+      longExplanation: "This element submits to a form action that has been scanned separately."
+    });
+  }
+
   // Process ALL URL elements concurrently in batches (all batches fire in parallel)
   const BATCH_SIZE = 20;
   const batches = [];
@@ -377,10 +508,12 @@ async function handleScan(context, tabId, frameId) {
           longExplanation: `This ${element.type} has been flagged by Google Safe Browsing: ${gsb.details}. It is recommended to avoid interacting with it.`
         };
         await updateElement(tabId, element.elementId, update);
-        // Fire-and-forget AI explanation for the popup
-        generateAIExplanation(element.url, element.type, context.visibleText, update.details)
-          .then(ai => updateElement(tabId, element.elementId, ai))
-          .catch(() => {});
+        // Fire-and-forget AI explanation for the popup (only if page context available)
+        if (contextText) {
+          generateAIExplanation(element.url, element.type, contextText, update.details)
+            .then(ai => updateElement(tabId, element.elementId, ai))
+            .catch(() => {});
+        }
         // Still check VT result once in background for additional data
         if (vt.status === "pending" && vt.analysisId) {
           scheduleVTCheck(tabId, element.elementId, vt.analysisId, 5000);
@@ -423,10 +556,12 @@ async function handleScan(context, tabId, frameId) {
           longExplanation: `This ${element.type} has been flagged by security services: ${details.join(". ")}. It is recommended to avoid interacting with it.`
         };
         await updateElement(tabId, element.elementId, update);
-        // Fire-and-forget AI explanation for the popup
-        generateAIExplanation(element.url, element.type, context.visibleText, update.details)
-          .then(ai => updateElement(tabId, element.elementId, ai))
-          .catch(() => {});
+        // Fire-and-forget AI explanation for the popup (only if page context available)
+        if (contextText) {
+          generateAIExplanation(element.url, element.type, contextText, update.details)
+            .then(ai => updateElement(tabId, element.elementId, ai))
+            .catch(() => {});
+        }
       } else {
         await updateElement(tabId, element.elementId, {
           status: "safe",
@@ -438,26 +573,27 @@ async function handleScan(context, tabId, frameId) {
       }
     }));
   }));
-  
-  // Process non-URL elements as safe with caveat
-  for (const element of nonUrlElements) {
-    await updateElement(tabId, element.elementId, {
-      status: "safe",
-      riskScore: 0,
-      source: "manual",
-      shortExplanation: "Safe (no URL to scan)",
-      longExplanation: "This interactive element does not contain a direct URL and requires manual verification."
-    });
-  }
 }
 
 // Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "PAGE_LOADED" || message.type === "PAGE_UPDATED") {
+  if (message.type === "PAGE_LOADED") {
     const tabId = sender.tab?.id;
     const frameId = sender.frameId;
     if (tabId !== undefined && frameId !== undefined) {
       handleScan(message.context, tabId, frameId).catch(console.error);
+    }
+  } else if (message.type === "NEW_ELEMENTS") {
+    const tabId = sender.tab?.id;
+    const frameId = sender.frameId;
+    if (tabId !== undefined) {
+      handleNewElements(message.elements, tabId, frameId).catch(console.error);
+    }
+  } else if (message.type === "TEXT_THREATS") {
+    const tabId = sender.tab?.id;
+    const frameId = sender.frameId;
+    if (tabId !== undefined) {
+      handleTextThreats(message.threats, message.pageUrl, message.pageText, tabId, frameId).catch(console.error);
     }
   } else if (message.type === "GET_TAB_DATA") {
     const tabId = message.tabId;
@@ -479,24 +615,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
     }
     return true;
-  } else if (message.type === "INIT_DASHBOARD") {
-    const tabId = message.tabId;
-    if (!dashboardPorts.has(tabId)) {
-      dashboardPorts.set(tabId, new Set());
-    }
-    dashboardPorts.get(tabId).add(sender.port);
-    
-    sender.port.onDisconnect.addListener(() => {
-      const set = dashboardPorts.get(tabId);
-      if (set) {
-        set.delete(sender.port);
-        if (set.size === 0) {
-          dashboardPorts.delete(tabId);
-        }
-      }
-    });
   }
   return false;
+});
+
+// Dashboard port connection handler
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'dashboard') return;
+  port.onMessage.addListener((msg) => {
+    if (msg.type === 'INIT_DASHBOARD') {
+      const tabId = msg.tabId;
+      if (!dashboardPorts.has(tabId)) {
+        dashboardPorts.set(tabId, new Set());
+      }
+      dashboardPorts.get(tabId).add(port);
+      port.onDisconnect.addListener(() => {
+        const set = dashboardPorts.get(tabId);
+        if (set) {
+          set.delete(port);
+          if (set.size === 0) dashboardPorts.delete(tabId);
+        }
+      });
+    }
+  });
 });
 
 // Download interceptor — proactively scan and block unsafe downloads
@@ -537,7 +678,62 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
   return true;
 });
 
-// Tab lifecycle: clear data on navigation/close
+// Download file tracking — store completed downloads for file:// open interception
+chrome.downloads.onChanged.addListener((delta) => {
+  if (delta.state?.current === "complete") {
+    chrome.downloads.search({ id: delta.id }, (results) => {
+      if (results?.[0]) {
+        const item = results[0];
+        chrome.storage.local.set({
+          [`dl_${item.url}`]: { filename: item.filename, url: item.url, time: Date.now() }
+        });
+      }
+    });
+  }
+});
+
+// file:// navigation interception — block opens of known-dangerous downloaded files
+chrome.webNavigation?.onBeforeNavigate?.addListener?.((details) => {
+  if (!details.url.startsWith("file://")) return;
+  chrome.storage.local.get(null, async (store) => {
+    for (const [key, dl] of Object.entries(store)) {
+      if (!key.startsWith("dl_")) continue;
+      // Match by filename suffix (path separators differ per OS)
+      const dlBase = dl.filename?.split(/[\\/]/).pop();
+      const navBase = details.url.split(/[\\/]/).pop()?.split("?")[0]?.split("#")[0];
+      if (dlBase && navBase && decodeURIComponent(navBase) === dlBase) {
+        // Check IndexedDB for existing scan result
+        try {
+          const database = await openDB();
+          const tx = database.transaction(STORE_NAME, "readonly");
+          const store2 = tx.objectStore(STORE_NAME);
+          const found = await new Promise((resolve) => {
+            const req = store2.openCursor();
+            req.onsuccess = (e) => {
+              const cursor = e.target.result;
+              if (cursor) {
+                if (cursor.value.url === dl.url && cursor.value.status === "unsafe") { resolve(cursor.value); return; }
+                cursor.continue();
+              } else resolve(null);
+            };
+            req.onerror = () => resolve(null);
+          });
+          if (found) {
+            // Block navigation to this file — redirect to a warning page
+            chrome.tabs.update(details.tabId, { url: "about:blank" });
+            return;
+          }
+          // If not yet scanned, proactively scan the download URL
+          const gsb = await checkGoogleSafeBrowsing(dl.url);
+          if (gsb.status === "unsafe") {
+            chrome.tabs.update(details.tabId, { url: "about:blank" });
+          }
+        } catch (e) {}
+        break;
+      }
+    }
+  });
+}, { url: [{ urlPrefix: "file://" }] });
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearTabData(tabId);
 });

@@ -7,6 +7,8 @@ interface ElementCardProps {
   onClick: () => void;
 }
 
+const isTextType = (t: string) => ['textThreat', 'cryptoAddress', 'clipboardHijack', 'phishingForm'].includes(t);
+
 export default function ElementCard({ element, onClick }: ElementCardProps) {
   const statusLabel = element.status === 'unsafe' 
     ? `Risk: ${element.riskScore}/100`
@@ -49,8 +51,22 @@ export default function ElementCard({ element, onClick }: ElementCardProps) {
               </div>
             )}
             
+            {/* Matched phrases for text threats */}
+            {isTextType(element.type) && element.matchedPhrases && element.matchedPhrases.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {element.matchedPhrases.slice(0, 3).map((p, i) => (
+                  <span key={i} className="text-xs bg-red-900/50 text-red-300 px-1.5 py-0.5 rounded">
+                    {p.length > 40 ? p.slice(0, 37) + '...' : p}
+                  </span>
+                ))}
+                {element.matchedPhrases.length > 3 && (
+                  <span className="text-xs text-gray-500">+{element.matchedPhrases.length - 3} more</span>
+                )}
+              </div>
+            )}
+
             {/* Short explanation if unsafe */}
-            {element.status === 'unsafe' && element.shortExplanation && (
+            {element.status === 'unsafe' && element.shortExplanation && !isTextType(element.type) && (
               <div className="text-yellow-300 text-xs mt-2 italic">
                 {element.shortExplanation}
               </div>

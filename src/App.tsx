@@ -4,7 +4,6 @@ import type { ElementData } from './types';
 import StatsRow from './components/StatsRow';
 import ElementCard from './components/ElementCard';
 import { getStatusColor } from './utils';
-import './index.css';
 
 type FilterType = 'all' | 'unsafe' | 'safe' | 'pending';
 
@@ -18,12 +17,14 @@ export default function App() {
 
   // Initialize connection and fetch initial data
   useEffect(() => {
+    let connection: ReturnType<typeof connectToBackground> | null = null;
+
     const init = async () => {
       try {
         const activeTabId = await getActiveTabId();
         setTabId(activeTabId);
         
-        const connection = connectToBackground(activeTabId);
+        connection = connectToBackground(activeTabId);
         setConnected(true);
         
         connection.onMessage((message) => {
@@ -47,8 +48,6 @@ export default function App() {
             }
           }
         );
-        
-        return () => connection.disconnect();
       } catch (err) {
         setError('Failed to connect to ScamShield background script. Is the extension loaded?');
         console.error(err);
@@ -56,19 +55,22 @@ export default function App() {
     };
     
     init();
+    return () => connection?.disconnect();
   }, []);
 
-  // Compute stats
-  let safe = 0, unsafe = 0, pending = 0, errors = 0;
-  for (const el of elements.values()) {
-    switch (el.status) {
-      case 'safe': safe++; break;
-      case 'unsafe': unsafe++; break;
-      case 'pending': pending++; break;
-      case 'error': errors++; break;
+  // Compute stats (memoized on elements map reference)
+  const stats = (() => {
+    let safe = 0, unsafe = 0, pending = 0, errors = 0;
+    for (const el of elements.values()) {
+      switch (el.status) {
+        case 'safe': safe++; break;
+        case 'unsafe': unsafe++; break;
+        case 'pending': pending++; break;
+        case 'error': errors++; break;
+      }
     }
-  }
-  const stats = { total: elements.size, safe, unsafe, pending, errors };
+    return { total: elements.size, safe, unsafe, pending, errors };
+  })();
 
   // Filter elements
   const filteredElements: ElementData[] = [];
@@ -139,7 +141,7 @@ export default function App() {
         {filteredElements.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             {filter === 'all' 
-              ? 'No elements detected yet. Browse a page with links and interactive elements.'
+              ? 'No threats detected yet. Scanning links, downloads, text content, and crypto addresses in real-time.'
               : `No ${filter} elements found.`}
           </div>
         ) : (
@@ -237,6 +239,28 @@ export default function App() {
                   <div className="text-sm text-gray-500">Detection Details</div>
                   <div className="bg-gray-900 p-2 rounded text-gray-300 text-sm">
                     {selectedElement.details}
+                  </div>
+                </div>
+              )}
+              
+              {selectedElement.matchedPhrases && selectedElement.matchedPhrases.length > 0 && (
+                <div>
+                  <div className="text-sm text-gray-500">Matched Patterns</div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {selectedElement.matchedPhrases.map((p, i) => (
+                      <span key={i} className="text-xs bg-red-900/50 text-red-300 px-2 py-1 rounded">
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {selectedElement.contextSnippet && (
+                <div>
+                  <div className="text-sm text-gray-500">Context</div>
+                  <div className="bg-gray-900 p-2 rounded text-gray-400 text-xs font-mono break-all">
+                    {selectedElement.contextSnippet}
                   </div>
                 </div>
               )}

@@ -1,592 +1,290 @@
-// content/scanner.js
+// content/scanner.js — optimized: event-driven, deduplicated, single observer
 
 const ScamShieldScanner = (() => {
-  let elementRiskMap = {}; // elementId -> risk data
-  
-  // Generate a unique ID for this frame to avoid collisions across iframes
   const FRAME_ID = Math.random().toString(36).substring(2, 10);
-
-  // Extract XPath from elementId (format: frameId:xpath:tag)
-  function getXPathFromElementId(elementId) {
-    const first = elementId.indexOf(":");
-    const last = elementId.lastIndexOf(":");
-    if (first === -1 || last === -1 || first === last) return elementId;
-    return elementId.substring(first + 1, last);
-  }
-
-  // ── 1. ELEMENT EXTRACTION ──────────────────────────────────────────
-  function generateElementId(el) {
-    // Generate a stable ID using XPath + frame ID
-    return FRAME_ID + ":" + getXPath(el) + ":" + el.tagName.toLowerCase();
-  }
-
-  function getXPath(element) {
-    if (element.id) return `//*[@id="${element.id}"]`;
-    if (element === document.body) return "/html/body";
-    
-    const siblings = Array.from(element.parentNode.children);
-    const index = siblings.indexOf(element) + 1;
-    const parentXPath = getXPath(element.parentNode);
-    return `${parentXPath}/${element.tagName.toLowerCase()}[${index}]`;
-  }
-
-  function extractPageContext() {
-    return {
-      url: window.location.href,
-      title: document.title,
-      visibleText: extractVisibleText(),
-      timestamp: Date.now(),
-      elements: extractAllElements()
-    };
-  }
-
-  function extractAllElements() {
-    const elements = [];
-    
-    // Links
-    document.querySelectorAll("a[href]").forEach(el => {
-      const href = el.href;
-      if (href.startsWith("http")) {
-        elements.push({
-          elementId: generateElementId(el),
-          type: "link",
-          url: href,
-          text: el.innerText.trim().slice(0, 120),
-          isVisible: isElementVisible(el),
-          hasLoginKeyword: /log.?in|sign.?in|password|verify|account/i.test(el.innerText)
-        });
-      }
-    });
-    
-    // Buttons (with onclick or type=submit)
-    document.querySelectorAll("button").forEach(el => {
-      const hasOnclick = el.hasAttribute("onclick");
-      const formSubmit = el.type === "submit";
-      if (hasOnclick || formSubmit || el.closest("form")) {
-        elements.push({
-          elementId: generateElementId(el),
-          type: "button",
-          text: el.innerText.trim().slice(0, 80) || el.getAttribute("aria-label") || "",
-          hasOnclick,
-          formSubmit,
-          isVisible: isElementVisible(el)
-        });
-      }
-    });
-    
-    // File inputs
-    document.querySelectorAll('input[type="file"]').forEach(el => {
-      elements.push({
-        elementId: generateElementId(el),
-        type: "fileInput",
-        text: el.getAttribute("accept") || "File upload",
-        isVisible: isElementVisible(el)
-      });
-    });
-    
-    // Download links (<a download>)
-    document.querySelectorAll("a[download]").forEach(el => {
-      const href = el.href;
-      if (href && href.startsWith("http")) {
-        elements.push({
-          elementId: generateElementId(el),
-          type: "download",
-          url: href,
-          text: el.innerText.trim().slice(0, 80) || el.getAttribute("download"),
-          isVisible: isElementVisible(el)
-        });
-      }
-    });
-    
-    // iframes
-    document.querySelectorAll("iframe[src]").forEach(el => {
-      const src = el.src;
-      if (src.startsWith("http")) {
-        elements.push({
-          elementId: generateElementId(el),
-          type: "iframe",
-          url: src,
-          isVisible: isElementVisible(el)
-        });
-      }
-    });
-    
-    // Media elements (video, audio, embed, object)
-    document.querySelectorAll("video[src], audio[src], embed[src], object[data]").forEach(el => {
-      const src = el.src || el.getAttribute("data");
-      if (src && src.startsWith("http")) {
-        elements.push({
-          elementId: generateElementId(el),
-          type: el.tagName.toLowerCase(),
-          url: src,
-          isVisible: isElementVisible(el)
-        });
-      }
-    });
-    
-    // Forms
-    document.querySelectorAll("form").forEach(el => {
-      const action = el.action;
-      if (action && action.startsWith("http")) {
-        elements.push({
-          elementId: generateElementId(el),
-          type: "form",
-          url: action,
-          method: el.method,
-          isVisible: isElementVisible(el)
-        });
-      }
-    });
-    
-    // Input type=submit and type=image
-    document.querySelectorAll('input[type="submit"], input[type="image"]').forEach(el => {
-      elements.push({
-        elementId: generateElementId(el),
-        type: "button",
-        text: el.value || el.getAttribute('aria-label') || '',
-        hasOnclick: el.hasAttribute('onclick'),
-        formSubmit: true,
-        isVisible: isElementVisible(el)
-      });
-    });
-    
-    // Generic clickable elements with onclick (not already captured)
-    document.querySelectorAll('[onclick]').forEach(el => {
-      // Skip if already captured as a button, input, link, or form
-      if (el.closest('button, input, a, form')) return;
-      elements.push({
-        elementId: generateElementId(el),
-        type: "clickable",
-        text: el.innerText.trim().slice(0, 80) || el.getAttribute('aria-label') || '',
-        hasOnclick: true,
-        isVisible: isElementVisible(el)
-      });
-    });
-    
-    return elements;
-  }
-
-  function extractVisibleText() {
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          const parent = node.parentElement;
-          if (!parent) return NodeFilter.FILTER_REJECT;
-          if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName))
-            return NodeFilter.FILTER_REJECT;
-          if (!isElementVisible(parent)) return NodeFilter.FILTER_REJECT;
-          return node.textContent.trim()
-            ? NodeFilter.FILTER_ACCEPT
-            : NodeFilter.FILTER_REJECT;
-        },
-      }
-    );
-
-    const chunks = [];
-    let node;
-    while ((node = walker.nextNode()) && chunks.join(" ").length < 3000) {
-      chunks.push(node.textContent.trim());
-    }
-    return chunks.join(" ");
-  }
-
-  function isElementVisible(el) {
-    if (!el || !el.offsetParent) return false;
-    const style = window.getComputedStyle(el);
-    return (
-      style.display !== "none" &&
-      style.visibility !== "hidden" &&
-      style.opacity !== "0" &&
-      el.offsetWidth > 0 &&
-      el.offsetHeight > 0
-    );
-  }
-
-  // ── 2. MUTATION OBSERVER ───────────────────────────────────────────
+  const SELECTOR = "a[href], form[action], iframe[src], video[src], audio[src], embed[src], object[data], input[type=file]";
+  const processedNodes = new WeakSet();
+  const scannedHashes = new Set(); // content-hash dedup: scan each unique text only once
+  const activeBubbleIds = new Set(); // only reposition bubbles that exist
+  let elementRiskMap = {};
   let debounceTimer = null;
 
-  function startMutationWatcher() {
-    const observer = new MutationObserver((mutations) => {
-      const meaningful = mutations.some(
-        (m) => m.addedNodes.length > 0 || m.type === "childList"
-      );
-      if (!meaningful) return;
+  // ── TEXT DETECTION PATTERNS ─────────────────────────────────────────
+  const CRYPTO_RE = { ethereum: /\b(0x[a-fA-F0-9]{40})\b/g, bitcoinBech32: /\b(bc1[ac-hj-np-z02-9]{11,71})\b/gi, bitcoinLegacy: /\b([13][a-km-zA-HJ-NP-Z1-9]{25,34})\b/g, solana: /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/g, tron: /\b(T[A-Za-z1-9]{33})\b/g, litecoin: /\b([LM3][a-km-zA-HJ-NP-Z1-9]{26,33})\b/g, xrp: /\b(r[1-9A-HJ-NP-Za-km-z]{25,34})\b/g };
+  const SCAM_PATTERNS = [
+    { re: /\burgent(?:ly)?\b|\bimmediate(?:ly)?\b|\bact\s+now\b|\bexpires?\s+(?:today|soon|in)\b|\blimited\s+time\b|\bhurry\b|\blast\s+chance\b/gi, cat: 'urgency' },
+    { re: /\b(?:account|wallet|access)\s+(?:has\s+been\s+)?(?:compromised|suspended|locked|restricted|disabled|blocked|frozen)\b|\bunauthorized\s+(?:access|activity|login|transaction)\b|\bsuspicious\s+(?:activity|login|transaction|sign[\s-]?in)\b|\bsecurity\s+(?:alert|warning|notice|breach|incident)\b|\bfraud(?:ulent)?\s+(?:activity|alert|detected)\b/gi, cat: 'accountThreat' },
+    { re: /\byou(?:'ve|have)\s+won\b|\bcongratulations\b|\bfree\s+(?:crypto|bitcoin|eth|tokens?|nft)\b|\bgiveaway\b|\bclaim\s+your\s+(?:prize|reward|tokens?|airdrop)\b|\bsend\s+\d+\s*(?:btc|eth|sol)\s+to\s+receive\b|\bdouble\s+your\s+(?:crypto|bitcoin|eth)\b/gi, cat: 'giveaway' },
+    { re: /\benter\s+your\s+(?:seed\s+phrase|private\s+key|password|mnemonic)\b|\bprovide\s+your\s+(?:seed\s+phrase|private\s+key|recovery\s+phrase)\b|\bseed\s+phrase\s+(?:required|needed|verification)\b|\bconnect\s+your\s+wallet\s+to\s+(?:claim|verify|receive)\b/gi, cat: 'credentialHarvest' },
+    { re: /\bverify\s+your\s+(?:account|identity|wallet|email)\b|\bupdate\s+your\s+(?:account|payment|security|information)\b|\byour\s+\w+\s+(?:has\s+been|was)\s+(?:compromised|hacked|breached)\b/gi, cat: 'phishing' },
+    { re: /\bwhitelist(?:ed|ing)?\b.*\b(?:address|wallet)\b|\bdrain(?:ed|ing)?\s+(?:wallet|funds)\b|\bhoneypot\b|\brug[\s-]?pull\b|\bapproval\s+(?:required|needed|pending)\b/gi, cat: 'cryptoScam' },
+    { re: /\b(?:official|legitimate)\s+(?:support|team|representative)\b|\bwe(?:'ve|have)\s+been\s+trying\s+to\s+reach\b|\bremote\s+(?:access|desk|support)\b|\bcall\s+(?:this|the)\s+number\b/gi, cat: 'socialEng' },
+  ];
+  const SENSITIVE_KW = ['seed', 'mnemonic', 'private', 'recovery', 'secret', 'passphrase'];
+  const RE_SCAN_TAGS = new Set(['SCRIPT','STYLE','NOSCRIPT','META','LINK','HEAD']);
+
+  // ── HELPERS ─────────────────────────────────────────────────────────
+  const hasValidUrl = v => v && (v.startsWith("http") || v.startsWith("file:") || v.startsWith("blob:") || v.startsWith("data:"));
+  const getXPath = el => { if (el.id) return `//*[@id="${el.id}"]`; if (el === document.body) return "/html/body"; const s = Array.from(el.parentNode.children), i = s.indexOf(el)+1; return `${getXPath(el.parentNode)}/${el.tagName.toLowerCase()}[${i}]`; };
+  const getXPathFromId = id => { const f = id.indexOf(":"), l = id.lastIndexOf(":"); return (f===-1||l===-1||f===l) ? id : id.substring(f+1,l); };
+  const generateElementId = el => FRAME_ID + ":" + getXPath(el) + ":" + el.tagName.toLowerCase();
+  const evaluateXPath = p => document.evaluate(p, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+  const isElementVisible = el => { if (!el?.offsetParent) return false; const s = getComputedStyle(el); return s.display!=="none" && s.visibility!=="hidden" && s.opacity!=="0" && el.offsetWidth>0 && el.offsetHeight>0; };
+  const escapeHtml = s => { const e = document.createElement('span'); e.textContent = s; return e.innerHTML; };
+
+  async function hashContent(text) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  function sendToBackground(message) { chrome.runtime.sendMessage(message).catch(() => {}); }
+
+  // ── ELEMENT EXTRACTION ──────────────────────────────────────────────
+  function extractSingle(el) {
+    const t = el.tagName.toLowerCase(), r = [];
+    const push = (type, url, text) => r.push({ elementId: generateElementId(el), type, url, text: (text||"").trim().slice(0,120), isVisible: isElementVisible(el) });
+    if (t==="a" && hasValidUrl(el.href)) push(el.hasAttribute("download") ? "download" : "link", el.href, el.innerText);
+    else if (t==="form" && hasValidUrl(el.action)) {
+      push("form", el.action);
+      el.querySelectorAll('button[type="submit"],button:not([type]),input[type="submit"],input[type="image"]').forEach(b => r.push({ elementId: generateElementId(b), type: "submit", url: el.action, text: (b.innerText||b.value||"").trim().slice(0,80), formSubmit: true, isVisible: isElementVisible(b) }));
+    } else if (t==="iframe" && hasValidUrl(el.src)) push("iframe", el.src);
+    else if (["video","audio","embed"].includes(t) && hasValidUrl(el.src)) push(t, el.src);
+    else if (t==="object" && hasValidUrl(el.getAttribute("data"))) push("object", el.getAttribute("data"));
+    else if (t==="input" && el.type==="file") r.push({ elementId: generateElementId(el), type: "fileInput", text: el.getAttribute("accept")||"File upload", isVisible: isElementVisible(el) });
+    else if ((t==="button"||t==="input") && (el.type==="submit"||el.type==="image"||(t==="button"&&!el.type))) {
+      const f = el.closest("form[action]");
+      if (f && hasValidUrl(f.action)) r.push({ elementId: generateElementId(el), type: "submit", url: f.action, text: (el.innerText||el.value||"").trim().slice(0,80), formSubmit: true, isVisible: isElementVisible(el) });
+    }
+    return r;
+  }
+
+  function extractAll() {
+    const els = [];
+    document.querySelectorAll(SELECTOR).forEach(el => { processedNodes.add(el); els.push(...extractSingle(el)); });
+    return els;
+  }
+
+  function extractFromNodes(nodes) {
+    const els = [];
+    for (const n of nodes) {
+      if (n.nodeType !== Node.ELEMENT_NODE || processedNodes.has(n)) continue;
+      processedNodes.add(n);
+      els.push(...extractSingle(n));
+      if (n.querySelectorAll) n.querySelectorAll(SELECTOR).forEach(c => { if (!processedNodes.has(c)) { processedNodes.add(c); els.push(...extractSingle(c)); } });
+    }
+    return els;
+  }
+
+  // ── TEXT EXTRACTION (from specific nodes, not full DOM) ─────────────
+  function extractTextFromNodes(nodes) {
+    const chunks = [];
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const t = node.textContent?.trim();
+        if (t && !RE_SCAN_TAGS.has(node.parentElement?.tagName)) chunks.push(t);
+      } else if (node.nodeType === Node.ELEMENT_NODE && !RE_SCAN_TAGS.has(node.tagName) && isElementVisible(node)) {
+        for (const child of node.childNodes) walk(child);
+      }
+    };
+    for (const n of nodes) walk(n);
+    return chunks.join(" ").slice(0, 3000);
+  }
+
+  function extractFullVisibleText() {
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: n => (!n.parentElement || RE_SCAN_TAGS.has(n.parentElement.tagName) || !isElementVisible(n.parentElement) || !n.textContent.trim()) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+    const c = []; let n;
+    while ((n = w.nextNode()) && c.join(" ").length < 3000) c.push(n.textContent.trim());
+    return c.join(" ");
+  }
+
+  // ── TEXT ANALYSIS (runs once per unique content hash) ────────────────
+  async function analyzeText(text) {
+    if (!text) return;
+    const hash = await hashContent(text);
+    if (scannedHashes.has(hash)) return; // already scanned this exact content
+    scannedHashes.add(hash);
+
+    const threats = []; let idx = 0;
+    const add = (type, risk, phrases, ctx, extra) => threats.push({ elementId: `${FRAME_ID}:text-${type}:${idx++}`, type, text: ctx.slice(0,120), riskScore: risk, matchedPhrases: phrases, contextSnippet: ctx.slice(0,300), ...extra });
+
+    // Crypto addresses
+    for (const [chain, re] of Object.entries(CRYPTO_RE)) { re.lastIndex = 0; let m; while ((m = re.exec(text)) !== null) { if (chain==='solana' && m[1].length<32) continue; add('cryptoAddress', 75, [`${chain}: ${m[1].slice(0,12)}...${m[1].slice(-6)}`], `Detected ${chain} address: ${m[1]}`, { chain }); } }
+
+    // Scam phrases
+    const matched = [], cats = new Set();
+    for (const { re, cat } of SCAM_PATTERNS) { re.lastIndex = 0; let m; while ((m = re.exec(text)) !== null) { matched.push(m[0]); cats.add(cat); } }
+    if (matched.length) add('textThreat', Math.min(100, matched.length * 12), matched.slice(0,5), `Detected ${[...cats].join(', ')} language`, { scamCategories: [...cats] });
+
+    // Homoglyphs
+    if (/[\u0400-\u04FF\u0370-\u03FF]/.test(text.replace(/[a-zA-Z]/g, ''))) add('textThreat', 85, ['Homoglyph characters detected'], 'Lookalike Unicode characters (possible IDN homograph attack)');
+
+    // Phishing forms
+    document.querySelectorAll('input:not([type=hidden]):not([type=submit])').forEach(input => {
+      const combined = ((input.labels?.[0]?.textContent||'') + ' ' + (input.placeholder||'') + ' ' + (input.name||'')).toLowerCase();
+      for (const kw of SENSITIVE_KW) { if (combined.includes(kw)) { add('phishingForm', 95, [kw], `Form field requests "${kw}" — ${input.placeholder||input.name||'unnamed'}`, { contextSnippet: `Label: "${input.labels?.[0]?.textContent||'none'}", Placeholder: "${input.placeholder||'none'}"` }); break; } }
+    });
+
+    if (threats.length) sendToBackground({ type: 'TEXT_THREATS', threats, pageUrl: location.href, pageText: text.slice(0, 2000) });
+  }
+
+  // ── MUTATION OBSERVER (single, handles elements + text + cleanup) ──
+  function startObserver() {
+    const observer = new MutationObserver(mutations => {
+      const added = [], removed = [];
+      let hasTextNodes = false;
+      for (const m of mutations) {
+        if (m.type === "childList") {
+          for (const n of m.addedNodes) {
+            added.push(n);
+            if (!hasTextNodes && n.nodeType === Node.ELEMENT_NODE) {
+              // Check if added node contains text content (not just script/style)
+              if (n.querySelector?.('p,span,div,td,li,h1,h2,h3,h4,h5,h6,a,button,label') || (!RE_SCAN_TAGS.has(n.tagName) && n.textContent?.trim())) hasTextNodes = true;
+            }
+          }
+          for (const n of m.removedNodes) removed.push(n);
+        }
+      }
+      if (added.length === 0 && removed.length === 0) return;
 
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        const context = extractPageContext();
-        sendToBackground({ type: "PAGE_UPDATED", context });
+        // Process added elements
+        if (added.length) {
+          const newEls = extractFromNodes(added);
+          // Text scan: only when text-bearing nodes are added
+          if (hasTextNodes) {
+            const newText = extractTextFromNodes(added);
+            if (newText.length > 20) analyzeText(newText);
+          }
+          if (newEls.length) {
+            const vis = [], off = [];
+            for (const el of newEls) (el.isVisible ? vis : off).push(el);
+            if (vis.length) sendToBackground({ type: "NEW_ELEMENTS", elements: vis, priority: "high" });
+            if (off.length) sendToBackground({ type: "NEW_ELEMENTS", elements: off, priority: "low" });
+          }
+        }
+        // Clean up bubbles for removed elements
+        if (removed.length) {
+          for (const id of [...activeBubbleIds]) {
+            const xpath = getXPathFromId(id);
+            if (!evaluateXPath(xpath)) {
+              document.getElementById(`ss-bubble-${id}`)?.remove();
+              activeBubbleIds.delete(id);
+            }
+          }
+        }
       }, 1500);
     });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
-  // ── 3. CHAT BUBBLE UI ──────────────────────────────────────────────
+  // ── CHAT BUBBLE UI ──────────────────────────────────────────────────
   function showOrUpdateBubble(elementId, data) {
-    // If safe, remove any bubble and restore element
-    if (data.status === "safe") {
-      document.getElementById(`ss-bubble-${elementId}`)?.remove();
-      restoreElement(elementId);
-      return;
-    }
-    
-    // If dangerous, disable element first
-    if (data.riskScore >= 70) {
-      disableElement(elementId, data);
-    }
-    
+    if (data.status === "safe") { document.getElementById(`ss-bubble-${elementId}`)?.remove(); activeBubbleIds.delete(elementId); restoreElement(elementId); return; }
+    if (data.riskScore >= 70) disableElement(elementId, data);
+
     let bubble = document.getElementById(`ss-bubble-${elementId}`);
-    
     if (!bubble) {
       bubble = document.createElement("div");
       bubble.id = `ss-bubble-${elementId}`;
-      bubble.style.cssText = `
-        position: absolute;
-        z-index: 2147483647;
-        background: #1a1a2e;
-        border: 2px solid ${data.riskScore >= 70 ? '#e63946' : '#ffc107'};
-        border-radius: 8px;
-        padding: 12px;
-        max-width: 320px;
-        color: white;
-        font-family: system-ui, sans-serif;
-        font-size: 14px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-        pointer-events: auto;
-      `;
+      bubble.style.cssText = `position:absolute;z-index:2147483647;background:#1a1a2e;border:2px solid ${data.riskScore>=70?'#e63946':'#ffc107'};border-radius:8px;padding:12px;max-width:320px;color:white;font-family:system-ui,sans-serif;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.5);pointer-events:auto`;
       document.body.appendChild(bubble);
-    }
-    
-    // Set content with short explanation, hidden long explanation, and visit anyway link
-    bubble.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
-        <strong style="color: ${data.riskScore >= 70 ? '#e63946' : '#ffc107'};">
-          ⚠️ Risk: ${data.riskScore}/100
-        </strong>
-        <button onclick="document.getElementById('ss-bubble-${elementId}').remove()" 
-                style="background:none;border:none;color:white;cursor:pointer;margin-left:8px;font-size:1.2em;">✕</button>
-      </div>
-      <p style="margin: 0 0 10px 0; color: #ccc; line-height: 1.4; font-size: 0.95em;">
-        ${data.shortExplanation || "This element is dangerous. Proceed with extreme caution."}
-      </p>
-      <div id="ss-long-${elementId}" style="display:none; margin: 0 0 10px 0; padding: 8px; border-top: 1px solid #444; color: #aaa; font-size: 0.85em; line-height: 1.4;">
-        ${data.longExplanation || "Loading detailed analysis..."}
-      </div>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <a href="#" id="ss-visit-${elementId}" target="_blank" style="
-          flex:1; padding:6px 12px; background:${data.riskScore >= 70 ? '#e63946' : '#ffc107'};
-          border:none; border-radius:4px; color:white; text-align:center;
-          text-decoration:none; font-size:0.9em; cursor:pointer;
-        ">Visit Anyway</a>
-        <a href="#" id="ss-explain-${elementId}" style="
-          padding:6px 12px; background:transparent; border:1px solid #4dabf7;
-          border-radius:4px; color:#4dabf7; text-decoration:none; font-size:0.9em;
-          cursor:pointer;
-        ">Explain more</a>
-      </div>
-    `;
-
-    // Position bubble near the target element
-    positionBubbleNearElement(elementId, bubble);
-
-    // Handle "Visit Anyway" click
-    const visitLink = bubble.querySelector(`#ss-visit-${elementId}`);
-    if (visitLink) {
-      visitLink.onclick = (e) => {
-        e.preventDefault();
-        // Restore element temporarily and navigate
-        if (restoreElement(elementId)) {
-          if (data.url) window.open(data.url, '_blank');
-          bubble.remove();
-        } else {
-          // Fallback: direct navigation
-          if (data.url) window.open(data.url, '_blank');
-        }
-      };
+      activeBubbleIds.add(elementId);
     }
 
-    // Handle "Explain more" toggle — expand inline, no modal
-    const explainLink = bubble.querySelector(`#ss-explain-${elementId}`);
-    if (explainLink) {
-      explainLink.onclick = (e) => {
-        e.preventDefault();
-        const longDiv = bubble.querySelector(`#ss-long-${elementId}`);
-        if (longDiv) {
-          const isHidden = longDiv.style.display === "none";
-          longDiv.style.display = isHidden ? "block" : "none";
-          explainLink.textContent = isHidden ? "Show less" : "Explain more";
-        }
-      };
-    }
+    const short = escapeHtml(data.shortExplanation || "This element is dangerous. Proceed with extreme caution.");
+    const long = escapeHtml(data.longExplanation || "Loading detailed analysis...");
+    const border = data.riskScore >= 70;
+
+    bubble.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px"><strong style="color:${border?'#e63946':'#ffc107'}">⚠️ Risk: ${data.riskScore}/100</strong><button onclick="document.getElementById('ss-bubble-${elementId}').remove()" style="background:none;border:none;color:white;cursor:pointer;margin-left:8px;font-size:1.2em">✕</button></div><p style="margin:0 0 10px;color:#ccc;line-height:1.4;font-size:.95em">${short}</p><div id="ss-long-${elementId}" style="display:none;margin:0 0 10px;padding:8px;border-top:1px solid #444;color:#aaa;font-size:.85em;line-height:1.4">${long}</div><div style="display:flex;gap:8px;align-items:center"><a href="#" id="ss-visit-${elementId}" target="_blank" style="flex:1;padding:6px 12px;background:${border?'#e63946':'#ffc107'};border:none;border-radius:4px;color:white;text-align:center;text-decoration:none;font-size:.9em;cursor:pointer">Visit Anyway</a><a href="#" id="ss-explain-${elementId}" style="padding:6px 12px;background:transparent;border:1px solid #4dabf7;border-radius:4px;color:#4dabf7;text-decoration:none;font-size:.9em;cursor:pointer">Explain more</a></div>`;
+
+    positionBubble(elementId, bubble);
+
+    const visit = bubble.querySelector(`#ss-visit-${elementId}`);
+    if (visit) visit.onclick = e => { e.preventDefault(); if (restoreElement(elementId) && data.url) window.open(data.url, '_blank'); else if (data.url) window.open(data.url, '_blank'); bubble.remove(); activeBubbleIds.delete(elementId); };
+
+    const explain = bubble.querySelector(`#ss-explain-${elementId}`);
+    if (explain) explain.onclick = e => { e.preventDefault(); const d = bubble.querySelector(`#ss-long-${elementId}`); if (d) { const h = d.style.display==="none"; d.style.display = h ? "block" : "none"; explain.textContent = h ? "Show less" : "Explain more"; } };
   }
 
-  function positionBubbleNearElement(elementId, bubble) {
-    const xpath = getXPathFromElementId(elementId);
-    const el = evaluateXPath(xpath);
-    
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      // position:absolute relative to document, not viewport — add scroll offset
-      bubble.style.top = `${rect.bottom + window.scrollY + 5}px`;
-      bubble.style.left = `${rect.left + window.scrollX}px`;
-    } else {
-      bubble.style.top = `${window.scrollY + 100}px`;
-      bubble.style.right = "20px";
-    }
+  function positionBubble(id, bubble) {
+    const el = evaluateXPath(getXPathFromId(id));
+    if (el) { const r = el.getBoundingClientRect(); bubble.style.top = `${r.bottom + scrollY + 5}px`; bubble.style.left = `${r.left + scrollX}px`; }
+    else { bubble.style.top = `${scrollY + 100}px`; bubble.style.right = "20px"; }
   }
 
-  function evaluateXPath(path) {
-    return document.evaluate(
-      path,
-      document,
-      null,
-      XPathResult.FIRST_ORDERED_NODE_TYPE,
-      null
-    ).singleNodeValue;
-  }
+  // ── CLICK INTERCEPTION ──────────────────────────────────────────────
+  document.addEventListener("click", e => {
+    const t = e.target.closest("a[href],form[action],input[type=submit],input[type=image]");
+    if (!t) return;
+    const r = elementRiskMap[generateElementId(t)];
+    if (r && r.status === "unsafe" && r.riskScore >= 70) { e.preventDefault(); e.stopImmediatePropagation(); showOrUpdateBubble(generateElementId(t), r); }
+  }, true);
 
-  // ── 4. CLICK INTERCEPTION ──────────────────────────────────────────
-  function attachClickInterceptor() {
-    document.addEventListener(
-      "click",
-      (e) => {
-        const target = e.target.closest("a[href], button, [onclick], [data-ss-original-href], input[type=submit], input[type=image]");
-        if (!target) return;
-        
-        const elementId = generateElementId(target);
-        const riskData = elementRiskMap[elementId];
-        
-        if (riskData && riskData.status === "unsafe" && riskData.riskScore >= 70) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          
-          // Show bubble
-          showOrUpdateBubble(elementId, riskData);
-        }
-      },
-      true
-    );
-  }
+  // ── SCROLL: reposition only active bubbles ──────────────────────────
+  let rafId;
+  const onScroll = () => { cancelAnimationFrame(rafId); rafId = requestAnimationFrame(() => { for (const id of activeBubbleIds) { const b = document.getElementById(`ss-bubble-${id}`); if (b) positionBubble(id, b); } }); };
+  addEventListener('scroll', onScroll, { capture: true, passive: true });
+  addEventListener('resize', onScroll);
 
-  // ── 5. ELEMENT DISABLE & REPLACEMENT ───────────────────────────────
+  // ── ELEMENT DISABLE / RESTORE ───────────────────────────────────────
   function disableElement(elementId, data) {
-    const xpath = getXPathFromElementId(elementId);
-    const el = evaluateXPath(xpath);
-    if (!el) return;
-    
-    if (el.dataset.ssDisabled === "true") return; // already disabled
-    
-    const tag = el.tagName.toLowerCase();
-    const originalUrl = data.url || el.href || el.src || el.action;
-    
-    // Save original state in dataset
-    if (tag === 'a' && el.href) {
-      el.dataset.ssOriginalHref = el.href;
-      el.dataset.ssOriginalTarget = el.target;
-      el.dataset.ssOriginalRel = el.rel;
-      el.removeAttribute('href');
-      el.style.cursor = 'not-allowed';
-      el.style.color = '#999';
-      el.style.textDecoration = 'line-through';
-    } else if ((tag === 'button' || el.hasAttribute('onclick')) && !el.disabled) {
-      el.dataset.ssOriginalOnclick = el.getAttribute('onclick') || '';
-      el.removeAttribute('onclick');
-      if (tag === 'button') {
-        el.disabled = true;
-        el.style.opacity = '0.5';
-        el.style.cursor = 'not-allowed';
-      }
-    } else if (tag === 'input' && el.type === 'file') {
-      el.disabled = true;
-      el.dataset.ssOriginalAccept = el.accept || '';
-      // Hide original and add warning
-      const warning = document.createElement('span');
-      warning.textContent = 'File upload blocked (dangerous)';
-      warning.style.color = '#e63946';
-      warning.style.fontSize = '0.9em';
-      el.parentNode.insertBefore(warning, el);
-      el.dataset.ssPlaceholder = 'true';
-    } else if (['iframe', 'video', 'audio', 'embed', 'object'].includes(tag)) {
-      const src = el.src || el.getAttribute('data');
-      if (src) el.dataset.ssOriginalSrc = src;
-      el.style.display = 'none';
-      const warning = document.createElement('div');
-      warning.textContent = 'Embedded content blocked (dangerous)';
-      warning.style.color = '#e63946';
-      warning.style.fontSize = '0.9em';
-      warning.style.padding = '4px 0';
-      el.parentNode.insertBefore(warning, el);
-      el.dataset.ssPlaceholder = 'true';
-    } else if (tag === 'form' && el.action) {
-      el.dataset.ssOriginalAction = el.action;
-      el.onsubmit = (e) => {
-        e.preventDefault();
-        showOrUpdateBubble(elementId, data);
-        return false;
-      };
-      const submitBtn = el.querySelector('button[type="submit"], input[type="submit"]');
-      if (submitBtn) {
-        submitBtn.dataset.ssOriginalOnclick = submitBtn.getAttribute('onclick') || '';
-        submitBtn.disabled = true;
-        submitBtn.style.opacity = '0.5';
-      }
-    }
-    
-    // Attach click handler to show bubble
-    el.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      showOrUpdateBubble(elementId, data);
-    });
-    
+    const el = evaluateXPath(getXPathFromId(elementId));
+    if (!el || el.dataset.ssDisabled === "true") return;
+    const t = el.tagName.toLowerCase();
+    if (t==='a' && el.href) { el.dataset.ssOrigHref=el.href; el.dataset.ssOrigTarget=el.target; el.dataset.ssOrigRel=el.rel; el.removeAttribute('href'); el.style.cssText+=';cursor:not-allowed;color:#999;text-decoration:line-through'; }
+    else if (t==='input' && el.type==='file') { el.disabled=true; const w=document.createElement('span'); w.textContent='File upload blocked (dangerous)'; w.style.cssText='color:#e63946;font-size:.9em'; el.parentNode.insertBefore(w,el); el.dataset.ssPlaceholder='true'; }
+    else if (['iframe','video','audio','embed','object'].includes(t)) { el.dataset.ssOrigSrc=el.src||el.getAttribute('data'); el.style.display='none'; const w=document.createElement('div'); w.textContent='Embedded content blocked (dangerous)'; w.style.cssText='color:#e63946;font-size:.9em;padding:4px 0'; el.parentNode.insertBefore(w,el); el.dataset.ssPlaceholder='true'; }
+    else if (t==='form' && el.action) { el.dataset.ssOrigAction=el.action; el.onsubmit=e=>{e.preventDefault();showOrUpdateBubble(elementId,data);return false;}; const b=el.querySelector('button[type="submit"],button:not([type]),input[type="submit"]'); if(b){b.disabled=true;b.style.opacity='0.5';} }
     el.dataset.ssDisabled = "true";
   }
 
   function restoreElement(elementId) {
-    const xpath = getXPathFromElementId(elementId);
-    const el = evaluateXPath(xpath);
-    if (!el) return false;
-    
-    if (el.dataset.ssDisabled !== "true") return false;
-    
-    const tag = el.tagName.toLowerCase();
-    
-    if (tag === 'a') {
-      if (el.dataset.ssOriginalHref) {
-        el.setAttribute('href', el.dataset.ssOriginalHref);
-        if (el.dataset.ssOriginalTarget) el.target = el.dataset.ssOriginalTarget;
-        if (el.dataset.ssOriginalRel) el.rel = el.dataset.ssOriginalRel;
-      }
-      el.style.cssText = el.style.cssText.replace(/cursor:\s*not-allowed;?/g, '');
-      el.style.color = '';
-      el.style.textDecoration = '';
-    } else if (tag === 'button' || el.hasAttribute('onclick')) {
-      if (el.dataset.ssOriginalOnclick) {
-        el.setAttribute('onclick', el.dataset.ssOriginalOnclick);
-      }
-      if (tag === 'button' && el.disabled) {
-        el.disabled = false;
-        el.style.opacity = '1';
-        el.style.cursor = '';
-      }
-    } else if (tag === 'input' && el.type === 'file') {
-      el.disabled = false;
-      if (el.dataset.ssPlaceholder) {
-        const placeholder = el.previousSibling;
-        if (placeholder && placeholder.textContent.includes('blocked')) {
-          placeholder.remove();
-        }
-      }
-    } else if (['iframe', 'video', 'audio', 'embed', 'object'].includes(tag)) {
-      if (el.dataset.ssOriginalSrc) {
-        if (['iframe','video','audio'].includes(tag)) el.src = el.dataset.ssOriginalSrc;
-        else el.setAttribute('data', el.dataset.ssOriginalSrc);
-      }
-      el.style.display = '';
-      if (el.dataset.ssPlaceholder) {
-        const placeholder = el.previousSibling;
-        if (placeholder && placeholder.textContent.includes('blocked')) {
-          placeholder.remove();
-        }
-      }
-    } else if (tag === 'form') {
-      if (el.dataset.ssOriginalAction) el.action = el.dataset.ssOriginalAction;
-      const submitBtn = el.querySelector('button[type="submit"], input[type="submit"]');
-      if (submitBtn && submitBtn.dataset.ssOriginalOnclick) {
-        submitBtn.setAttribute('onclick', submitBtn.dataset.ssOriginalOnclick);
-        submitBtn.disabled = false;
-        submitBtn.style.opacity = '1';
-      }
-    }
-    
+    const el = evaluateXPath(getXPathFromId(elementId));
+    if (!el || el.dataset.ssDisabled !== "true") return false;
+    const t = el.tagName.toLowerCase();
+    if (t==='a') { if(el.dataset.ssOrigHref) el.setAttribute('href',el.dataset.ssOrigHref); if(el.dataset.ssOrigTarget) el.target=el.dataset.ssOrigTarget; if(el.dataset.ssOrigRel) el.rel=el.dataset.ssOrigRel; el.style.cssText=el.style.cssText.replace(/cursor:\s*not-allowed;?/g,''); el.style.color=''; el.style.textDecoration=''; }
+    else if (t==='input' && el.type==='file') { el.disabled=false; if(el.dataset.ssPlaceholder){const p=el.previousSibling;if(p?.textContent?.includes('blocked'))p.remove();} }
+    else if (['iframe','video','audio','embed','object'].includes(t)) { if(el.dataset.ssOrigSrc){['iframe','video','audio'].includes(t)?el.src=el.dataset.ssOrigSrc:el.setAttribute('data',el.dataset.ssOrigSrc);} el.style.display=''; if(el.dataset.ssPlaceholder){const p=el.previousSibling;if(p?.textContent?.includes('blocked'))p.remove();} }
+    else if (t==='form') { if(el.dataset.ssOrigAction) el.action=el.dataset.ssOrigAction; const b=el.querySelector('button[type="submit"],button:not([type]),input[type="submit"]'); if(b){b.disabled=false;b.style.opacity='1';} }
     delete el.dataset.ssDisabled;
     return true;
   }
 
-  // ── 6. MESSAGE BUS ────────────────────────────────────────────────
-  function sendToBackground(message) {
-    chrome.runtime.sendMessage(message).catch(() => {});
-  }
+  // ── MESSAGE BUS ─────────────────────────────────────────────────────
+  chrome.runtime.onMessage.addListener(msg => {
+    if (msg.type === "ELEMENT_UPDATE") {
+      elementRiskMap[msg.elementId] = msg.data;
+      msg.data.status === "unsafe" ? showOrUpdateBubble(msg.elementId, msg.data) : document.getElementById(`ss-bubble-${msg.elementId}`)?.remove();
+    } else if (msg.type === "RESTORE_ELEMENT") { restoreElement(msg.elementId); }
+  });
 
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "ELEMENT_UPDATE") {
-      const { elementId, data } = message;
-      elementRiskMap[elementId] = data;
-      
-      // Update bubble if exists
-      if (data.status === "unsafe") {
-        showOrUpdateBubble(elementId, data);
-      } else {
-        document.getElementById(`ss-bubble-${elementId}`)?.remove();
-      }
-    } else if (message.type === "RESTORE_ELEMENT") {
-      // From dashboard: restore element then open URL
-      const success = restoreElement(message.elementId);
-      if (success) {
-        const data = elementRiskMap[message.elementId];
-        if (data?.url) {
-          // Let dashboard open the URL separately
-          console.log("[ScamShield] Restored element:", message.elementId);
-        }
-      }
+  // ── CLIPBOARD HIJACK MONITOR ────────────────────────────────────────
+  const cryptoAddrRe = /0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[ac-hj-np-z02-9]{11,71}|T[A-Za-z1-9]{33}/i;
+  let lastCopy = null;
+
+  document.addEventListener('copy', () => {
+    const sel = getSelection().toString().trim();
+    if (sel && cryptoAddrRe.test(sel)) lastCopy = { text: sel, time: Date.now() };
+  }, true);
+
+  document.addEventListener('paste', e => {
+    if (!lastCopy) return;
+    const pasted = (e.clipboardData || window.clipboardData).getData('text').trim();
+    if (Date.now() - lastCopy.time < 30000 && lastCopy.text !== pasted && cryptoAddrRe.test(pasted)) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      sendToBackground({ type: 'TEXT_THREATS', threats: [{ elementId: `${FRAME_ID}:clipboard-hijack:${Date.now()}`, type: 'clipboardHijack', text: `Address swapped: ${lastCopy.text.slice(0,16)}... → ${pasted.slice(0,16)}...`, riskScore: 100, matchedPhrases: ['Clipboard hijacking detected'], contextSnippet: `Copied: ${lastCopy.text}\nSwapped to: ${pasted}` }], pageUrl: location.href, pageText: '' });
+      lastCopy = null;
     }
-  });
+  }, true);
 
-  function repositionBubble(elementId) {
-    const bubble = document.getElementById(`ss-bubble-${elementId}`);
-    if (!bubble) return;
-    positionBubbleNearElement(elementId, bubble);
-  }
-
-  function repositionAllBubbles() {
-    Object.keys(elementRiskMap).forEach(elementId => {
-      const data = elementRiskMap[elementId];
-      if (data.status === 'unsafe') {
-        repositionBubble(elementId);
-      }
-    });
-  }
-
-  // Keep bubbles positioned on scroll/resize — uses rAnimationFrame for frame-synced tracking
-  let rafId;
-  function onScrollOrResize() {
-    cancelAnimationFrame(rafId);
-    rafId = requestAnimationFrame(repositionAllBubbles);
-  }
-  window.addEventListener('scroll', onScrollOrResize, { capture: true, passive: true });
-  window.addEventListener('resize', onScrollOrResize);
-
-  // Clean up bubbles when their element is removed
-  const cleanupObserver = new MutationObserver((mutations) => {
-    mutations.forEach(mutation => {
-      mutation.removedNodes.forEach(node => {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          // Check if any bubble's element was removed
-          Object.keys(elementRiskMap).forEach(elementId => {
-            const xpath = getXPathFromElementId(elementId);
-            const exists = evaluateXPath(xpath);
-            if (!exists) {
-              document.getElementById(`ss-bubble-${elementId}`)?.remove();
-            }
-          });
-        }
-      });
-    });
-  });
-  cleanupObserver.observe(document.body, { childList: true, subtree: true });
-
-  // ── 6. INIT ───────────────────────────────────────────────────────
+  // ── INIT ────────────────────────────────────────────────────────────
   function init() {
-    const context = extractPageContext();
+    const context = { url: location.href, title: document.title, visibleText: extractFullVisibleText(), timestamp: Date.now(), elements: extractAll() };
     sendToBackground({ type: "PAGE_LOADED", context });
-    startMutationWatcher();
-    attachClickInterceptor();
+    startObserver();
+    // Initial text scan — uses hash so it only runs once
+    analyzeText(context.visibleText);
   }
 
   return { init };

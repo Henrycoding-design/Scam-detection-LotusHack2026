@@ -6,10 +6,15 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
+    base: './',
     plugins: [react(), tailwindcss()],
     build: {
       outDir: 'scam-shield/assets',
-      emptyOutDir: true
+      emptyOutDir: true,
+      assetsDir: '.',
+      rollupOptions: {
+        input: 'dashboard.html',
+      },
     },
     resolve: {
       alias: {

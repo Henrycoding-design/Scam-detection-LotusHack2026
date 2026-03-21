@@ -28,9 +28,12 @@ export function getTypeIcon(type: string): string {
     case 'embed': return '📦';
     case 'object': return '📦';
     case 'form': return '📝';
+    case 'submit': return '📨';
     case 'clickable': return '👆';
+    case 'textThreat': return '⚠️';
+    case 'cryptoAddress': return '💰';
+    case 'clipboardHijack': return '📋';
+    case 'phishingForm': return '🎣';
     default: return '❓';
   }
 }
-
-
