@@ -24,11 +24,8 @@ const ScamShieldScanner = (() => {
   }
 
   function buildFingerprint(context) {
-    const text = (context.visibleText || "").slice(0, 400);
-    const links = (context.links || [])
-      .slice(0, 10)
-      .map((link) => normalizeUrl(link.href))
-      .join("|");
+    const text = context.visibleText || "";
+    const links = (context.links || []).map((link) => normalizeUrl(link.href)).join("|");
     return `${normalizeUrl(context.url)}::${context.title}::${text}::${links}`;
   }
 
@@ -60,12 +57,11 @@ const ScamShieldScanner = (() => {
     return Array.from(document.querySelectorAll("a[href]"))
       .map((el) => ({
         href: normalizeUrl(el.href),
-        text: el.innerText.trim().slice(0, 120),
+        text: el.innerText.trim(),
         isVisible: isElementVisible(el),
         hasLoginKeyword: /log.?in|sign.?in|password|verify/i.test(el.innerText),
       }))
-      .filter((link) => link.href.startsWith("http"))
-      .slice(0, 80);
+      .filter((link) => link.href.startsWith("http"));
   }
 
   function extractVisibleText() {
@@ -91,13 +87,11 @@ const ScamShieldScanner = (() => {
 
     const chunks = [];
     let node;
-    let currentLength = 0;
 
-    while ((node = walker.nextNode()) && currentLength < 3000) {
+    while ((node = walker.nextNode())) {
       const text = node.textContent.trim();
       if (!text) continue;
       chunks.push(text);
-      currentLength += text.length + 1;
     }
 
     return chunks.join(" ");
@@ -132,7 +126,7 @@ const ScamShieldScanner = (() => {
     document.querySelectorAll("script").forEach(s => {
       const c = s.textContent || "";
       if (!s.src) inline++;
-      if (c.length > 200 && /^[\[\]\+\!\(\)\s]+$/.test(c.slice(0, 500))) jsFuck = true;
+      if (c.length > 200 && /^[\[\]\+\!\(\)\s]+$/.test(c)) jsFuck = true;
       if (/eval\s*\(\s*atob\s*\(/.test(c)) evalAtob = true;
       if (/addEventListener.*contextmenu.*preventDefault/.test(c)) blockRC = true;
       if (/F12|keydown.*F12|debugger\s*;?\s*\}/.test(c)) blockDT = true;
