@@ -1,4 +1,4 @@
-import type { ElementData } from '../types';
+import type { ElementData, ElementType } from '../types';
 import { getTypeIcon, getStatusColor, getRiskColor } from '../utils';
 
 interface ElementCardProps {
@@ -7,7 +7,7 @@ interface ElementCardProps {
   onClick: () => void;
 }
 
-const isTextType = (t: string) => ['textThreat', 'cryptoAddress', 'clipboardHijack', 'phishingForm'].includes(t);
+const isTextType = (t: ElementType) => ['textThreat', 'cryptoAddress', 'clipboardHijack', 'phishingForm'].includes(t);
 
 export default function ElementCard({ element, onClick }: ElementCardProps) {
   const statusLabel = element.status === 'unsafe' 

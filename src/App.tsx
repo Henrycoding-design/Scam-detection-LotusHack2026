@@ -20,6 +20,7 @@ export default function App() {
     let connection: ReturnType<typeof connectToBackground> | null = null;
     let currentTabId: number | null = null;
     let tabChangeListener: ((activeInfo: any) => void) | null = null;
+    let navListener: ((updatedTabId: number, changeInfo: any) => void) | null = null;
 
     const init = async () => {
       try {
@@ -62,11 +63,12 @@ export default function App() {
         chrome.tabs.onActivated.addListener(tabChangeListener);
 
         // Safety net: clear display when tracked tab starts loading a new page
-        chrome.tabs.onUpdated.addListener((updatedTabId, changeInfo) => {
+        navListener = (updatedTabId: number, changeInfo: any) => {
           if (updatedTabId === currentTabId && changeInfo.status === 'loading') {
             setElements(new Map());
           }
-        });
+        };
+        chrome.tabs.onUpdated.addListener(navListener);
       } catch (err) {
         setError('Failed to connect to ScamShield background script. Is the extension loaded?');
         console.error(err);
@@ -78,6 +80,7 @@ export default function App() {
       connection?.disconnect();
       setConnected(false);
       if (tabChangeListener) chrome.tabs.onActivated.removeListener(tabChangeListener);
+      chrome.tabs.onUpdated.removeListener(navListener);
     };
   }, []);
 
