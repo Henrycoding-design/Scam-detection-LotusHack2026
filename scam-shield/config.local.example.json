@@ -1,0 +1,7 @@
+{
+  "aiProvider": "auto",
+  "geminiApiKey": "AIza...",
+  "geminiModel": "gemini-2.5-flash",
+  "openrouterApiKey": "sk-or-v1-...",
+  "openrouterModel": "stepfun/step-3.5-flash:free"
+}

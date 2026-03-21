@@ -13,7 +13,9 @@
   ],
 
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "https://generativelanguage.googleapis.com/*",
+    "https://openrouter.ai/*"
   ],
 
   "background": {
@@ -33,6 +35,8 @@
     "default_popup": "popup/popup.html",
     "default_icon": "icon.png"
   },
+
+  "options_page": "options/options.html",
 
   "icons": {
     "16": "icon.png",

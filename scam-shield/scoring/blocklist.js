@@ -7,13 +7,21 @@ const UPDATE_INTERVAL = 7 * 24 * 60 * 60 * 1000; // 1 week
 
 let blocklistSet = null;
 
+function logStage(stage, payload = {}) {
+  console.log(`[ScamShield][Blocklist] ${stage}`, payload);
+}
+
 export async function initBlocklist() {
-  if (blocklistSet) return;
+  if (blocklistSet) {
+    logStage("init.skip_cached", { size: blocklistSet.size });
+    return;
+  }
 
   try {
     const { [CACHE_KEY]: cached } = await chrome.storage.local.get(CACHE_KEY);
     if (cached && cached.length > 0) {
       blocklistSet = new Set(cached);
+      logStage("init.loaded_cache", { size: cached.length });
     }
   } catch {
     // Storage unavailable
@@ -22,14 +30,19 @@ export async function initBlocklist() {
   // Background update if stale
   const { [TIMESTAMP_KEY]: ts } = await chrome.storage.local.get(TIMESTAMP_KEY);
   if (!ts || Date.now() - ts > UPDATE_INTERVAL) {
+    logStage("init.refresh_needed", { hasTimestamp: Boolean(ts) });
     updateBlocklist().catch(() => {});
   }
 }
 
 async function updateBlocklist() {
   try {
+    logStage("update.start");
     const response = await fetch(BLOCKLIST_URL);
-    if (!response.ok) return;
+    if (!response.ok) {
+      logStage("update.http_error", { status: response.status });
+      return;
+    }
 
     const text = await response.text();
     const domains = text
@@ -43,17 +56,23 @@ async function updateBlocklist() {
         [CACHE_KEY]: domains,
         [TIMESTAMP_KEY]: Date.now(),
       });
+      logStage("update.complete", { size: domains.length });
     }
   } catch {
     // Network error — use cached version
+    logStage("update.error");
   }
 }
 
 export function checkBlocklist(hostname) {
-  if (!blocklistSet) return null;
+  if (!blocklistSet) {
+    logStage("check.skip_uninitialized", { hostname });
+    return null;
+  }
 
   const host = hostname.toLowerCase();
   if (blocklistSet.has(host)) {
+    logStage("check.hit_exact", { hostname: host });
     return {
       type: "blocklist_hit",
       risk: 95,
@@ -67,6 +86,7 @@ export function checkBlocklist(hostname) {
   if (parts.length > 2) {
     const parent = parts.slice(-2).join(".");
     if (blocklistSet.has(parent)) {
+      logStage("check.hit_parent", { hostname: host, parent });
       return {
         type: "blocklist_parent_hit",
         risk: 85,
@@ -76,5 +96,6 @@ export function checkBlocklist(hostname) {
     }
   }
 
+  logStage("check.miss", { hostname: host });
   return null;
 }
