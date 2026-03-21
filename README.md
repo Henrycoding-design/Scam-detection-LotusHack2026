@@ -1,20 +1,23 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# ScamShield Extension MVP
 
-# Run and deploy your AI Studio app
+Chrome extension MVP for hackathon phishing and scam detection.
 
-This contains everything you need to run your app locally.
+## What It Does
 
-View your app in AI Studio: https://ai.studio/apps/745ece0d-e2fd-4424-90ac-56997eb4d54d
+- Scans the current page for suspicious URL, text, metadata, and link signals
+- Scores the page locally inside the extension
+- Calls Gemini directly from the extension for a short user-facing explanation
+- Shows the result in the side panel and warns on risky links
 
-## Run Locally
+## Run It
 
-**Prerequisites:**  Node.js
+1. Open `chrome://extensions`
+2. Turn on `Developer mode`
+3. Click `Load unpacked`
+4. Select the [scam-shield](./scam-shield) folder
+5. Open any page and click the extension icon to view the side panel
 
+## Hackathon Note
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+This MVP calls Gemini directly from the extension for speed of development.
+That is acceptable for a hackathon demo, but not secure for production.
