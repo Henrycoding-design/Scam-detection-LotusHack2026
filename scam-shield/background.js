@@ -1,5 +1,5 @@
 import { scorePageContext, scoreSingleLink, buildTopReasons } from "./scoring/heuristics.js";
-import { getGeminiExplanation, buildHeuristicFallbackExplanation } from "./scoring/gemini.js";
+import { getAiExplanation, buildHeuristicFallbackExplanation } from "./scoring/model.js";
 import {
   setActiveTabId,
   setTabResult,
@@ -185,7 +185,7 @@ async function runHeuristicStage(context) {
 async function runAiStage(heuristicResult, context) {
   try {
     return await Promise.race([
-      getGeminiExplanation({
+      getAiExplanation({
         url: heuristicResult.url,
         score: heuristicResult.score,
         signals: heuristicResult.signals,

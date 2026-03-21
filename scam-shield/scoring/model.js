@@ -1,9 +1,15 @@
-// scoring/gemini.js — now uses OpenRouter (free model) instead of paid Gemini
+// scoring/model.js — AI explanation via OpenRouter (free model)
 
-// You need a free OpenRouter API key from https://openrouter.ai/keys
-// Free models like meta-llama/llama-3.1-8b-instruct:free require no credits.
-const OPENROUTER_API_KEY = "sk-or-v1-YOUR_FREE_KEY_HERE";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+async function loadApiKey() {
+  try {
+    const { OPENROUTER_API_KEY } = await import("./config.js");
+    return OPENROUTER_API_KEY;
+  } catch {
+    return null;
+  }
+}
 
 export function buildHeuristicFallbackExplanation({ verdict, reasons }) {
   const reasonText = reasons.length > 0
@@ -20,9 +26,11 @@ export function buildHeuristicFallbackExplanation({ verdict, reasons }) {
   };
 }
 
-export async function getGeminiExplanation({ url, score, signals, visibleText }) {
+export async function getAiExplanation({ url, score, signals, visibleText }) {
   if (score < 20) return null;
-  if (OPENROUTER_API_KEY.includes("YOUR_FREE_KEY_HERE")) return null;
+
+  const apiKey = await loadApiKey();
+  if (!apiKey) return null;
 
   const topSignals = signals
     .slice()
@@ -57,7 +65,7 @@ Respond with a JSON object only, no markdown, in this exact shape:
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+        "Authorization": `Bearer ${apiKey}`,
         "HTTP-Referer": "https://github.com/Henrycoding-design/Scam-detection-LotusHack2026",
       },
       body: JSON.stringify({
