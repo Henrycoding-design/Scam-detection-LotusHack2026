@@ -6,3 +6,4 @@ coverage/
 *.log
 .env*
 scam-shield/scoring/config.js
+scam-shield/config.local.json

@@ -171,11 +171,11 @@ function checkIframes(iframes) {
     if (f.isHidden)
       sigs.push({ type: "hidden_iframe", category: "forms", risk: 75,
         reason: "Hidden iframe loading external content",
-        detail: `This page embeds an invisible iframe — a hidden window within the page — that loads content from ${f.src || "an unknown source"}. Hidden iframes are a favorite tool of scammers: they can load phishing forms, tracking pixels, or malicious scripts without you ever knowing. The content exists on the page and can interact with your session, but you can't see it. Legitimate websites have almost no reason to hide iframes.`);
+        detail: `This page embeds an invisible iframe — a hidden window within the page — that loads content from ${f.src || "an unknown source"}. Hidden iframes are a favorite tool of scammers: they can load phishing forms, tracking pixels, or malicious scripts without you ever knowing. The content exists on the page and can interact with your session, but you can't see it. Legitimate websites have almost no reason to hide iframes.`});
     if (f.isCrossOrigin && !f.isHidden && !KNOWN_EMBEDS.some(d => (f.src || "").includes(d)))
       sigs.push({ type: "unknown_iframe", category: "forms", risk: 35,
         reason: "Embeds content from unknown domain",
-        detail: `This page loads an embedded frame from ${f.src || "an external source"} that isn't a recognized embed provider (like YouTube or Google Maps). While embeds are common for videos and maps, scammers use cross-origin iframes to inject phishing forms or malicious content that appears to be part of the legitimate page. The iframe runs in its own security context and could be doing anything behind the scenes.`);
+        detail: `This page loads an embedded frame from ${f.src || "an external source"} that isn't a recognized embed provider (like YouTube or Google Maps). While embeds are common for videos and maps, scammers use cross-origin iframes to inject phishing forms or malicious content that appears to be part of the legitimate page. The iframe runs in its own security context and could be doing anything behind the scenes.`});
   }
   return sigs;
 }
