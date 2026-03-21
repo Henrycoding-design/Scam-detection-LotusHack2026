@@ -27,15 +27,22 @@ export function scorePageContext(ctx) {
   if (ctx.blocklistHit) signals.push(ctx.blocklistHit);
   if (ctx.domainAgeSignal) signals.push(ctx.domainAgeSignal);
 
+  // Deduplicate: one signal per type, keep highest risk
+  const byType = {};
+  for (const s of signals) {
+    if (!byType[s.type] || s.risk > byType[s.type].risk) byType[s.type] = s;
+  }
+  const unique = Object.values(byType);
+
   // Category-weighted: max risk per category → weighted safety
   const cats = {};
-  for (const s of signals) cats[s.category] = Math.max(cats[s.category] || 0, s.risk);
+  for (const s of unique) cats[s.category] = Math.max(cats[s.category] || 0, s.risk);
   let score = 100;
   for (const [c, w] of Object.entries(WEIGHTS)) score -= (cats[c] || 0) * w;
   score = Math.max(0, Math.round(score));
 
   const confidence = Object.values(cats).filter(r => r > 0).length / Object.keys(WEIGHTS).length;
-  return { score, signals, confidence };
+  return { score, signals: unique, confidence };
 }
 
 export function buildTopReasons(signals, n = 3) {
@@ -145,38 +152,38 @@ function checkMeta(meta) {
 // ── DOM: Forms ────────────────────────────────────────────────────────
 function checkForms(forms, host) {
   if (!forms?.length) return [];
-  const sigs = [];
+  const byType = {};
+  const add = (type, risk, reason, detail) => {
+    if (!byType[type] || risk > byType[type].risk) byType[type] = { type, category: "forms", risk, reason, detail };
+  };
   for (const f of forms) {
     if (f.actionHost && !f.actionHost.includes(host) && !host.includes(f.actionHost))
-      sigs.push({ type: "cross_origin_form", category: "forms", risk: 85,
-        reason: `Form sends data to ${f.actionHost}`,
-        detail: `This page contains a form that sends your information to a completely different website (${f.actionHost}). Legitimate websites always process form data on their own servers. When a form sends data to an external domain, whatever you type — passwords, credit card numbers, personal details — goes directly to the scammer. This is one of the most direct and effective credential harvesting techniques in existence.` });
+      add("cross_origin_form", 85, "Form sends data to " + f.actionHost,
+        "This page has a form that sends your information to a different website (" + f.actionHost + "). Whatever you type goes directly to the attacker.");
     if (f.hasPassword && ![...KNOWN_LOGIN].some(p => host === p || host.endsWith("." + p)))
-      sigs.push({ type: "unexpected_password", category: "forms", risk: 70,
-        reason: "Password input on non-login site",
-        detail: `This page asks for a password, but ${host} is not a recognized login service. Scammers create pixel-perfect copies of real login pages — Gmail, Facebook, bank portals — and host them on unrelated domains. When you enter your password, it goes straight to the attacker. Always verify the domain before entering credentials. If you arrived here from an email or message, close this page and go to the real website directly.` });
+      add("unexpected_password", 70, "Password input on non-login site",
+        "This page asks for a password but " + host + " is not a recognized login service. Scammers create fake login pages on unrelated domains.");
     if (f.hiddenInputCount > 3)
-      sigs.push({ type: "hidden_inputs", category: "forms", risk: 50,
-        reason: `${f.hiddenInputCount} hidden input fields`,
-        detail: `This form contains ${f.hiddenInputCount} hidden input fields that you cannot see. While one or two hidden fields are normal (like CSRF security tokens), this many suggests the form is collecting extra data about you — tracking identifiers, session tokens, or information scraped from your browser — and bundling it with whatever you do submit. Scammers use this to fingerprint your device and correlate your data across multiple phishing sites.` });
+      add("hidden_inputs", 50, "Hidden input fields in form",
+        "This form has hidden fields collecting data you did not provide. Scammers use these to fingerprint your device.");
   }
-  return sigs;
+  return Object.values(byType);
 }
 
 // ── DOM: Iframes ──────────────────────────────────────────────────────
 function checkIframes(iframes) {
   if (!iframes?.length) return [];
   const sigs = [];
-  for (const f of iframes) {
-    if (f.isHidden)
-      sigs.push({ type: "hidden_iframe", category: "forms", risk: 75,
-        reason: "Hidden iframe loading external content",
-        detail: `This page embeds an invisible iframe — a hidden window within the page — that loads content from ${f.src || "an unknown source"}. Hidden iframes are a favorite tool of scammers: they can load phishing forms, tracking pixels, or malicious scripts without you ever knowing. The content exists on the page and can interact with your session, but you can't see it. Legitimate websites have almost no reason to hide iframes.`});
-    if (f.isCrossOrigin && !f.isHidden && !KNOWN_EMBEDS.some(d => (f.src || "").includes(d)))
-      sigs.push({ type: "unknown_iframe", category: "forms", risk: 35,
-        reason: "Embeds content from unknown domain",
-        detail: `This page loads an embedded frame from ${f.src || "an external source"} that isn't a recognized embed provider (like YouTube or Google Maps). While embeds are common for videos and maps, scammers use cross-origin iframes to inject phishing forms or malicious content that appears to be part of the legitimate page. The iframe runs in its own security context and could be doing anything behind the scenes.`});
-  }
+  const hidden = iframes.filter(f => f.isHidden);
+  if (hidden.length)
+    sigs.push({ type: "hidden_iframe", category: "forms", risk: 75,
+      reason: hidden.length + " hidden iframe(s) loading external content",
+      detail: "This page embeds " + hidden.length + " invisible iframe(s). Hidden iframes are a favorite tool of scammers: they load phishing forms, tracking pixels, or malicious scripts without you knowing. Legitimate websites have almost no reason to hide iframes." });
+  const unknownCross = iframes.filter(f => f.isCrossOrigin && !f.isHidden && !KNOWN_EMBEDS.some(d => (f.src || "").includes(d)));
+  if (unknownCross.length)
+    sigs.push({ type: "unknown_iframe", category: "forms", risk: 35,
+      reason: "Embeds content from " + unknownCross.length + " unknown external domain(s)",
+      detail: "This page loads embedded frames from unrecognized domains. Scammers use cross-origin iframes to inject phishing forms or malicious content." });
   return sigs;
 }
 
@@ -186,16 +193,16 @@ function checkScripts(info) {
   const sigs = [];
   const r = (type, risk, reason, detail) => sigs.push({ type, category: "behavior", risk, reason, detail });
   if (info.hasJsFuck) r("jsfuck", 80, "JSFuck obfuscation detected",
-    "This page contains JavaScript written entirely in JSFuck — an encoding that represents any code using only six characters: []+!(). It's used to hide malicious behavior from security scanners and code reviewers. Legitimate developers never use JSFuck because it makes code unreadable. Its presence is almost always a sign that the page is doing something it doesn't want you to see, like silently redirecting you or stealing data.");
+    "This page contains JavaScript written entirely in JSFuck - an encoding that represents any code using only six characters. It is used to hide malicious behavior from security scanners. Legitimate developers never use JSFuck because it makes code unreadable.");
   if (info.hasEvalAtob) r("eval_atob", 75, "Decodes and executes hidden code",
-    "This page uses 'eval(atob(...))' — it takes a base64-encoded string, decodes it into JavaScript, and executes it immediately. This is a technique to hide malicious code from static analysis tools. The encoded payload could contain anything: redirects to phishing pages, data exfiltration code, or cryptocurrency miners. Legitimate developers have no reason to hide their code this way.");
+    "This page uses eval(atob(...)) to decode and execute hidden base64 code. This hides malicious payloads from static analysis. Legitimate developers have no reason to hide their code this way.");
   if (info.blocksRightClick) r("blocks_right_click", 55, "Right-click disabled",
-    "This page actively prevents you from right-clicking. Scammers do this to stop you from inspecting the page source, checking where links actually go, or opening developer tools. No legitimate website restricts right-clicking — it's a user-hostile behavior that exists almost exclusively on scam pages trying to hide what they're really doing.");
+    "This page prevents you from right-clicking. Scammers do this to stop you from inspecting the page source or checking where links go.");
   if (info.blocksDevTools) r("blocks_devtools", 60, "Developer tools blocked",
-    "This page tries to detect if you have browser developer tools open and either blocks them or redirects you away. This is a strong anti-analysis technique used by sophisticated scammers to prevent security researchers and tech-savvy users from inspecting the page's behavior. No legitimate website needs to prevent you from using your browser's built-in debugging tools.");
+    "This page detects and blocks browser developer tools. No legitimate website needs to block your browser tools.");
   if (info.hasCryptoMiner) r("crypto_miner", 85, "Cryptocurrency mining code found",
-    "This page includes code that hijacks your computer's processor to mine cryptocurrency for the site owner — without your knowledge or consent. Crypto miners drain your battery, slow down your device significantly, and increase your electricity bill. Some malicious sites embed miners directly; others inject them through compromised ad networks. Either way, your hardware is being used to make someone else money.");
-  if (info.inlineScriptCount > 15) r("excessive_scripts", 40, `${info.inlineScriptCount} inline scripts`,
-    `This page contains ${info.inlineScriptCount} inline JavaScript blocks embedded directly in the HTML. While a few inline scripts are normal, this unusually high number often indicates the page was assembled from copied code snippets or is using multiple obfuscated scripts to distribute malicious behavior across many small pieces that are harder to analyze as a whole.`);
+    "This page mines cryptocurrency using your CPU without consent. This drains your battery and slows your device.");
+  if (info.inlineScriptCount > 15) r("excessive_scripts", 40, info.inlineScriptCount + " inline scripts",
+    "This page has " + info.inlineScriptCount + " inline script blocks. This unusually high number often indicates obfuscated malicious code.");
   return sigs;
 }
