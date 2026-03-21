@@ -184,15 +184,12 @@ async function runHeuristicStage(context) {
 
 async function runAiStage(heuristicResult, context) {
   try {
-    return await Promise.race([
-      getAiExplanation({
-        url: heuristicResult.url,
-        score: heuristicResult.score,
-        signals: heuristicResult.signals,
-        visibleText: (context.visibleText || "").slice(0, 3000),
-      }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("AI timeout")), 8000)),
-    ]) || buildHeuristicFallbackExplanation(heuristicResult);
+    return await getAiExplanation({
+      url: heuristicResult.url,
+      score: heuristicResult.score,
+      signals: heuristicResult.signals,
+      visibleText: (context.visibleText || "").slice(0, 3000),
+    }) || buildHeuristicFallbackExplanation(heuristicResult);
   } catch {
     return buildHeuristicFallbackExplanation(heuristicResult);
   }

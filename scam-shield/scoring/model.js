@@ -79,7 +79,6 @@ JSON shape:
         model: "stepfun/step-3.5-flash:free",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
-        max_tokens: 1024,
         reasoning: { enabled: false },
       }),
     });
