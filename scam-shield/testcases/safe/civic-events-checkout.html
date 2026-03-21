@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Civic Events | Reserve your studio workshop seats</title>
+  <meta name="description" content="Reserve seats for Civic Events workshops, speaker nights, and studio sessions across the city.">
+  <meta property="og:description" content="Book upcoming community workshops, review venue notes, and confirm attendee details.">
+  <style>
+    :root {
+      --ink: #1f2330;
+      --muted: #61687c;
+      --accent: #d26a34;
+      --paper: #fffaf5;
+      --line: rgba(31, 35, 48, 0.1);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top center, rgba(210, 106, 52, 0.15), transparent 26%),
+        linear-gradient(180deg, #fff6ed 0%, #fffcf8 100%);
+    }
+    a { color: inherit; text-decoration: none; }
+    .shell { width: min(1050px, calc(100% - 40px)); margin: 0 auto; padding: 26px 0 44px; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+    .brand { font-weight: 800; letter-spacing: 0.03em; }
+    nav { display: flex; gap: 18px; color: var(--muted); font-size: 14px; }
+    .layout {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+    }
+    .panel {
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 28px;
+      box-shadow: 0 18px 50px rgba(31, 35, 48, 0.07);
+    }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    h1 { margin: 12px 0; font-size: clamp(32px, 4.8vw, 52px); line-height: 1.05; }
+    h2 { margin: 0 0 10px; font-size: 24px; }
+    p { color: var(--muted); line-height: 1.7; }
+    .details {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin: 24px 0;
+    }
+    .detail {
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--paper);
+      border: 1px solid rgba(210, 106, 52, 0.12);
+    }
+    form {
+      display: grid;
+      gap: 14px;
+    }
+    label {
+      display: grid;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    input, select {
+      padding: 14px 15px;
+      border-radius: 14px;
+      border: 1px solid rgba(31, 35, 48, 0.14);
+      background: white;
+      font: 15px/1.2 inherit;
+    }
+    button, .button-soft {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 18px;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    button {
+      width: fit-content;
+      border: 0;
+      background: var(--ink);
+      color: white;
+      cursor: pointer;
+    }
+    .button-soft {
+      background: rgba(210, 106, 52, 0.12);
+      color: var(--accent);
+    }
+    .stack { display: grid; gap: 16px; }
+    @media (max-width: 900px) {
+      header, nav { flex-direction: column; align-items: flex-start; }
+      .layout, .details { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">Civic Events</div>
+      <nav>
+        <a href="/calendar">Calendar</a>
+        <a href="/venues">Venues</a>
+        <a href="/programs">Programs</a>
+        <a href="https://maps.google.com/?q=Civic+Events+Hall">Venue map</a>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <div class="eyebrow">Workshop reservation</div>
+        <h1>Reserve your seats for the civic storytelling workshop.</h1>
+        <p>
+          Join designers, researchers, and local organizers for a practical session on neighborhood storytelling,
+          interview design, and visual documentation. Seats are held for 15 minutes while you complete attendee details.
+        </p>
+        <div class="details">
+          <div class="detail"><strong>Date</strong><br>Thursday, 7:00 PM</div>
+          <div class="detail"><strong>Venue</strong><br>Harbor Assembly Room</div>
+          <div class="detail"><strong>Seats</strong><br>2 general admission</div>
+        </div>
+        <form action="/orders/confirm" method="post">
+          <label>
+            Primary attendee
+            <input type="text" name="attendee_name" value="Jordan Avery">
+          </label>
+          <label>
+            Contact email
+            <input type="email" name="attendee_email" value="jordan@example.com">
+          </label>
+          <label>
+            Ticket delivery
+            <select name="delivery_method">
+              <option>Mobile pass</option>
+              <option>Email PDF</option>
+            </select>
+          </label>
+          <button type="submit">Confirm reservation</button>
+        </form>
+      </section>
+
+      <aside class="stack">
+        <section class="panel">
+          <h2>Included with your booking</h2>
+          <p>Workshop materials, refreshments, and a digital reading list sent after the event.</p>
+          <a class="button-soft" href="/programs/storytelling-studio">Read program details</a>
+        </section>
+        <section class="panel">
+          <h2>Before you arrive</h2>
+          <p>Doors open 30 minutes early. Bring a notebook, your mobile ticket, and any case studies you want to discuss with facilitators.</p>
+          <a class="button-soft" href="/faq/arrival">Review arrival notes</a>
+        </section>
+      </aside>
+    </main>
+  </div>
+</body>
+</html>

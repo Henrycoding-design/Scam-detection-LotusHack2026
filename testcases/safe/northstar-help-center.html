@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Northstar Help Center | Set up your workspace in one afternoon</title>
+  <meta name="description" content="Practical setup guides, onboarding articles, and walkthrough videos for Northstar Workspace.">
+  <meta property="og:description" content="Find setup checklists, product tours, and export guides for Northstar Workspace.">
+  <style>
+    :root {
+      --bg: #f3f7fb;
+      --ink: #102032;
+      --muted: #557085;
+      --accent: #1468d4;
+      --accent-soft: rgba(20, 104, 212, 0.1);
+      --panel: #ffffff;
+      --line: rgba(16, 32, 50, 0.1);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(20, 104, 212, 0.16), transparent 28%),
+        linear-gradient(180deg, #eef4fb 0%, #f8fbff 100%);
+    }
+    a { color: inherit; text-decoration: none; }
+    .shell { width: min(1100px, calc(100% - 40px)); margin: 0 auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 24px 0;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .star {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      background: linear-gradient(145deg, #2e8bff, #0d4aa6);
+      position: relative;
+    }
+    .star::before {
+      content: "";
+      position: absolute;
+      inset: 9px;
+      background: white;
+      clip-path: polygon(50% 0, 61% 37%, 100% 37%, 69% 58%, 80% 100%, 50% 72%, 20% 100%, 31% 58%, 0 37%, 39% 37%);
+    }
+    nav { display: flex; gap: 20px; color: var(--muted); font-size: 15px; }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 24px;
+      padding-bottom: 22px;
+    }
+    .panel, .article, .video-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 24px 60px rgba(16, 32, 50, 0.08);
+    }
+    .panel { padding: 34px; }
+    .eyebrow {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 18px 0 14px; font-size: clamp(34px, 4.6vw, 58px); line-height: 1.02; }
+    h2 { margin: 0 0 10px; font-size: 27px; }
+    p, li { color: var(--muted); line-height: 1.7; }
+    .cta-row { display: flex; gap: 12px; margin-top: 22px; flex-wrap: wrap; }
+    .button, .button-light {
+      padding: 13px 16px;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .button { background: var(--accent); color: white; }
+    .button-light { background: var(--accent-soft); color: var(--accent); }
+    .article { padding: 28px; margin: 24px 0; }
+    .columns {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 24px;
+      margin-bottom: 34px;
+    }
+    .checklist {
+      margin: 18px 0 0;
+      padding-left: 22px;
+    }
+    .video-card {
+      padding: 22px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    iframe {
+      width: 100%;
+      min-height: 260px;
+      border: 0;
+      border-radius: 18px;
+      background: #d8e6fb;
+    }
+    @media (max-width: 900px) {
+      header, nav { flex-direction: column; align-items: flex-start; }
+      .hero, .columns { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <div class="star"></div>
+        <div>Northstar Help Center</div>
+      </div>
+      <nav>
+        <a href="/guides">Guides</a>
+        <a href="/templates">Templates</a>
+        <a href="/release-notes">Release notes</a>
+        <a href="/contact-support">Contact support</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="panel">
+          <span class="eyebrow">Workspace onboarding</span>
+          <h1>Set up your team space in one focused afternoon.</h1>
+          <p>
+            This guide walks through member invites, folders, approvals, and dashboards with a pace that works for small teams.
+            Use the checklist below, watch the short walkthrough, and tailor the examples to your own internal process.
+          </p>
+          <div class="cta-row">
+            <a class="button" href="/guides/workspace-setup">Open full guide</a>
+            <a class="button-light" href="/templates/launch-checklist">Download checklist</a>
+          </div>
+        </div>
+        <aside class="video-card">
+          <div class="eyebrow">Walkthrough</div>
+          <h2>Video overview</h2>
+          <p>A short recorded tour of folders, approvals, and reporting layouts for first-time teams.</p>
+          <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" title="Northstar product tour"></iframe>
+        </aside>
+      </section>
+
+      <section class="columns">
+        <article class="article">
+          <h2>Recommended setup order</h2>
+          <p>
+            Most teams get the best result by setting structure first, then importing active work, then customizing notifications and automation.
+            None of these steps require outside tools, and every screen shown below lives inside the main workspace.
+          </p>
+          <ol class="checklist">
+            <li>Create team spaces for planning, delivery, and reporting.</li>
+            <li>Invite collaborators and assign workspace roles.</li>
+            <li>Import current tasks and map ownership fields.</li>
+            <li>Review dashboard templates and publish your first report.</li>
+          </ol>
+        </article>
+        <article class="article">
+          <h2>Helpful links</h2>
+          <p>Use these official docs to go deeper once the core workspace is ready.</p>
+          <div class="cta-row">
+            <a class="button-light" href="/guides/import-data">Import spreadsheet data</a>
+            <a class="button-light" href="/guides/reporting-basics">Reporting basics</a>
+            <a class="button-light" href="https://youtube.com/results?search_query=northstar+workspace+walkthrough">Browse tutorial channel</a>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

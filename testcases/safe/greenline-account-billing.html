@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Greenline Cloud | Billing preferences</title>
+  <meta name="description" content="Update receipt details, team billing contacts, and invoice preferences for Greenline Cloud.">
+  <meta property="og:description" content="Manage billing contacts, tax details, and invoice delivery for Greenline Cloud.">
+  <style>
+    :root {
+      --bg: #f5faf7;
+      --ink: #173127;
+      --muted: #587266;
+      --accent: #158a58;
+      --panel: #ffffff;
+      --line: rgba(23, 49, 39, 0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(21, 138, 88, 0.18), transparent 30%),
+        linear-gradient(180deg, #eef7f1 0%, #f9fcfa 100%);
+    }
+    .shell { width: min(1080px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 42px; }
+    header, .row { display: flex; justify-content: space-between; gap: 20px; }
+    header { align-items: center; margin-bottom: 28px; }
+    .brand { font-weight: 800; font-size: 20px; letter-spacing: 0.02em; }
+    nav { display: flex; gap: 18px; font-size: 14px; color: var(--muted); }
+    a { text-decoration: none; color: inherit; }
+    .hero, .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 18px 50px rgba(23, 49, 39, 0.07);
+    }
+    .hero {
+      padding: 34px;
+      margin-bottom: 24px;
+    }
+    .eyebrow {
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    h1 { margin: 10px 0 12px; font-size: clamp(34px, 4.8vw, 56px); line-height: 1.02; }
+    h2 { margin: 0 0 10px; font-size: 24px; }
+    p { color: var(--muted); line-height: 1.7; }
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 24px;
+    }
+    .card { padding: 26px; }
+    form {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    label {
+      display: grid;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    input, select {
+      width: 100%;
+      padding: 14px 15px;
+      border-radius: 14px;
+      border: 1px solid rgba(23, 49, 39, 0.14);
+      background: #fbfefd;
+      font: 15px/1.2 inherit;
+      color: var(--ink);
+    }
+    .full { grid-column: 1 / -1; }
+    button {
+      width: fit-content;
+      padding: 14px 18px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--accent);
+      color: white;
+      font: 700 14px/1.2 inherit;
+      cursor: pointer;
+    }
+    .note {
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: rgba(21, 138, 88, 0.08);
+      color: var(--ink);
+      margin-top: 16px;
+    }
+    @media (max-width: 860px) {
+      header, nav, .summary, form, .row { grid-template-columns: 1fr; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">Greenline Cloud</div>
+      <nav>
+        <a href="/workspace">Workspace</a>
+        <a href="/usage">Usage</a>
+        <a href="/billing">Billing</a>
+        <a href="/help">Help desk</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div class="eyebrow">Organization settings</div>
+      <h1>Keep your invoice details and billing contacts up to date.</h1>
+      <p>
+        Use this page to update receipt addresses, tax references, and the team members who receive monthly invoices.
+        Changes apply to future billing cycles only and do not affect completed statements.
+      </p>
+      <div class="summary">
+        <div class="card">
+          <h2>Current plan</h2>
+          <p>Growth plan, billed monthly for 28 active members. Usage reports refresh every morning for finance review.</p>
+          <a href="/plans/compare">Compare plan options</a>
+        </div>
+        <div class="card">
+          <h2>Invoice schedule</h2>
+          <p>Invoices are issued on the first business day of each month and sent to your billing contact list automatically.</p>
+          <a href="/billing/history">View invoice history</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Billing preferences</h2>
+      <p>Update who receives billing notifications, which legal entity appears on invoices, and how purchase order references are stored.</p>
+      <form action="/billing/preferences" method="post">
+        <input type="hidden" name="workspace_id" value="team-204">
+        <input type="hidden" name="return_to" value="/billing">
+        <label>
+          Billing contact
+          <input type="text" name="billing_contact" value="Morgan Lee">
+        </label>
+        <label>
+          Billing email
+          <input type="email" name="billing_email" value="finance@example.com">
+        </label>
+        <label>
+          Company name
+          <input type="text" name="company_name" value="Greenline Studio LLC">
+        </label>
+        <label>
+          Tax region
+          <select name="tax_region">
+            <option>United States</option>
+            <option>Canada</option>
+            <option>European Union</option>
+          </select>
+        </label>
+        <label class="full">
+          Purchase order reference
+          <input type="text" name="po_reference" value="PO-48217">
+        </label>
+        <div class="full row">
+          <div class="note">Need procurement documentation? Visit the vendor profile in the billing history section.</div>
+          <button type="submit">Save billing preferences</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</body>
+</html>
