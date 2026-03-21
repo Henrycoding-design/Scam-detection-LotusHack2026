@@ -12,8 +12,8 @@ export function getStatusColor(status: ElementStatus): string {
 }
 
 export function getRiskColor(score: number): string {
-  if (score >= 80) return 'bg-red-600';
-  if (score >= 50) return 'bg-yellow-500';
+  if (score >= 70) return 'bg-red-600';
+  if (score >= 40) return 'bg-yellow-500';
   return 'bg-green-500';
 }
 

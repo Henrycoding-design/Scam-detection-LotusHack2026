@@ -232,12 +232,12 @@ const ScamShieldScanner = (() => {
   function positionBubble(id, bubble) {
     const el = evaluateXPath(getXPathFromId(id));
     if (el) { const r = el.getBoundingClientRect(); bubble.style.top = `${r.bottom + scrollY + 5}px`; bubble.style.left = `${r.left + scrollX}px`; }
-    else { bubble.style.top = `${scrollY + 100}px`; bubble.style.right = "20px"; }
+    else { bubble.style.top = `${scrollY + 100}px`; bubble.style.left = ""; bubble.style.right = "20px"; }
   }
 
   // ── CLICK INTERCEPTION ──────────────────────────────────────────────
   document.addEventListener("click", e => {
-    const t = e.target.closest("a[href],form[action],input[type=submit],input[type=image]");
+    const t = e.target.closest("a[href],form[action],input[type=submit],input[type=image],[onclick]");
     if (!t) return;
     const r = elementRiskMap[generateElementId(t)];
     if (r && r.status === "unsafe" && r.riskScore >= 70) { e.preventDefault(); e.stopImmediatePropagation(); showOrUpdateBubble(generateElementId(t), r); }
