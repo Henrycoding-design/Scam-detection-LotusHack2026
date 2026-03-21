@@ -60,6 +60,13 @@ export default function App() {
           }
         };
         chrome.tabs.onActivated.addListener(tabChangeListener);
+
+        // Safety net: clear display when tracked tab starts loading a new page
+        chrome.tabs.onUpdated.addListener((updatedTabId, changeInfo) => {
+          if (updatedTabId === currentTabId && changeInfo.status === 'loading') {
+            setElements(new Map());
+          }
+        });
       } catch (err) {
         setError('Failed to connect to ScamShield background script. Is the extension loaded?');
         console.error(err);

@@ -767,11 +767,15 @@ chrome.webNavigation?.onReferenceFragmentUpdated?.addListener((details) => {
   if (details.frameId === 0) clearTabData(details.tabId);
 });
 
-// Fallback: if webNavigation is unavailable
+// Additional safety net: tabs.onUpdated catches navigations that webNavigation may miss
+// (address bar entries, certain redirects). Dedup window prevents double-clears.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") clearTabData(tabId);
+});
+
+// Fallback: if webNavigation is unavailable, tabs.onUpdated is the primary mechanism
 if (!chrome.webNavigation) {
-  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (changeInfo.status === "loading") clearTabData(tabId);
-  });
+  // Already registered above, nothing extra needed
 }
 
 // Open side panel when extension icon is clicked
