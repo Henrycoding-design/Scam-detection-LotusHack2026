@@ -111,6 +111,14 @@ async function updateElement(tabId, elementId, updates) {
 // Track last clear time per tab to deduplicate rapid clears
 const lastClearTime = new Map();
 
+// Clean up VT alarms for a tab
+async function clearTabAlarms(tabId) {
+  const alarms = await chrome.alarms.getAll();
+  for (const a of alarms) {
+    if (a.name.startsWith(`vt:${tabId}:`)) chrome.alarms.clear(a.name);
+  }
+}
+
 async function clearTabData(tabId) {
   const now = Date.now();
   const last = lastClearTime.get(tabId);
@@ -675,40 +683,30 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+// Check IndexedDB for an unsafe URL scan result
+async function isUrlUnsafeInDB(url) {
+  const database = await openDB();
+  const tx = database.transaction(STORE_NAME, "readonly");
+  const store = tx.objectStore(STORE_NAME);
+  return new Promise((resolve) => {
+    const req = store.openCursor();
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        if (cursor.value.url === url && cursor.value.status === "unsafe") { resolve(true); return; }
+        cursor.continue();
+      } else resolve(false);
+    };
+    req.onerror = () => resolve(false);
+  });
+}
+
 // Download interceptor — proactively scan and block unsafe downloads
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
-  openDB().then(async (database) => {
-    // First check IndexedDB for existing scan result
-    const tx = database.transaction(STORE_NAME, "readonly");
-    const store = tx.objectStore(STORE_NAME);
-    const existing = await new Promise((resolve) => {
-      const req = store.openCursor();
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          if (cursor.value.url === downloadItem.url && cursor.value.status === "unsafe") {
-            resolve(cursor.value);
-            return;
-          }
-          cursor.continue();
-        } else resolve(null);
-      };
-      req.onerror = () => resolve(null);
-    });
-
-    if (existing && existing.riskScore >= 70) {
-      suggest({ cancel: true });
-      return;
-    }
-
-    // Proactively scan via Google Safe Browsing
+  isUrlUnsafeInDB(downloadItem.url).then(async (found) => {
+    if (found) { suggest({ cancel: true }); return; }
     const gsb = await checkGoogleSafeBrowsing(downloadItem.url);
-    if (gsb.status === "unsafe") {
-      suggest({ cancel: true });
-      return;
-    }
-
-    suggest({});
+    suggest(gsb.status === "unsafe" ? { cancel: true } : {});
   }).catch(() => suggest({}));
   return true;
 });
@@ -728,42 +726,21 @@ chrome.downloads.onChanged.addListener((delta) => {
 });
 
 // file:// navigation interception — block opens of known-dangerous downloaded files
-chrome.webNavigation?.onBeforeNavigate?.addListener?.((details) => {
+chrome.webNavigation?.onBeforeNavigate?.addListener((details) => {
   if (!details.url.startsWith("file://")) return;
-  chrome.storage.local.get(null, async (store) => {
+  chrome.storage.local.get(null, (store) => {
     for (const [key, dl] of Object.entries(store)) {
       if (!key.startsWith("dl_")) continue;
-      // Match by filename suffix (path separators differ per OS)
       const dlBase = dl.filename?.split(/[\\/]/).pop();
       const navBase = details.url.split(/[\\/]/).pop()?.split("?")[0]?.split("#")[0];
       if (dlBase && navBase && decodeURIComponent(navBase) === dlBase) {
-        // Check IndexedDB for existing scan result
-        try {
-          const database = await openDB();
-          const tx = database.transaction(STORE_NAME, "readonly");
-          const store2 = tx.objectStore(STORE_NAME);
-          const found = await new Promise((resolve) => {
-            const req = store2.openCursor();
-            req.onsuccess = (e) => {
-              const cursor = e.target.result;
-              if (cursor) {
-                if (cursor.value.url === dl.url && cursor.value.status === "unsafe") { resolve(cursor.value); return; }
-                cursor.continue();
-              } else resolve(null);
-            };
-            req.onerror = () => resolve(null);
-          });
-          if (found) {
-            // Block navigation to this file — redirect to a warning page
-            chrome.tabs.update(details.tabId, { url: "about:blank" });
-            return;
-          }
-          // If not yet scanned, proactively scan the download URL
+        // Clean up storage entry — no need to keep it after checking
+        chrome.storage.local.remove(key);
+        isUrlUnsafeInDB(dl.url).then(async (found) => {
+          if (found) { chrome.tabs.update(details.tabId, { url: "about:blank" }); return; }
           const gsb = await checkGoogleSafeBrowsing(dl.url);
-          if (gsb.status === "unsafe") {
-            chrome.tabs.update(details.tabId, { url: "about:blank" });
-          }
-        } catch (e) {}
+          if (gsb.status === "unsafe") chrome.tabs.update(details.tabId, { url: "about:blank" });
+        }).catch(() => {});
         break;
       }
     }
@@ -771,6 +748,7 @@ chrome.webNavigation?.onBeforeNavigate?.addListener?.((details) => {
 }, { url: [{ urlPrefix: "file://" }] });
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearTabData(tabId);
+  clearTabAlarms(tabId);
   lastClearTime.delete(tabId);
 });
 
