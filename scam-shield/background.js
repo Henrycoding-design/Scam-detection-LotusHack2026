@@ -196,19 +196,10 @@ async function checkVirusTotal(url) {
 }
 
 // Event-driven VT result check via chrome.alarms (survives service worker restart)
-function scheduleVTCheck(tabId, elementId, analysisId, delayMs, retries) {
-  retries = retries || 0;
-  if (retries >= 3) {
-    updateElement(tabId, elementId, {
-      status: "error", source: "vt",
-      shortExplanation: "VT scan failed after retries.",
-      longExplanation: "VirusTotal could not process this URL after 3 attempts."
-    }).catch(() => {});
-    return;
-  }
+function scheduleVTCheck(tabId, elementId, analysisId, delayMs) {
   const alarmName = `vt:${tabId}:${elementId}`;
   chrome.alarms.create(alarmName, { delayInMinutes: Math.max(delayMs / 60000, 0.05) });
-  chrome.storage.session.set({ [alarmName]: { tabId, elementId, analysisId, retries } });
+  chrome.storage.session.set({ [alarmName]: { tabId, elementId, analysisId } });
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -217,11 +208,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   const data = ctx[alarm.name];
   if (!data) return;
   chrome.storage.session.remove(alarm.name);
-  fetchVTResult(data.tabId, data.elementId, data.analysisId, data.retries || 0);
+  fetchVTResult(data.tabId, data.elementId, data.analysisId);
 });
 
-async function fetchVTResult(tabId, elementId, analysisId, retries) {
-  retries = retries || 0;
+async function fetchVTResult(tabId, elementId, analysisId) {
   try {
     const analysisRes = await fetch(`${APIS.VT_URL}/${analysisId}`, {
       headers: { "x-apikey": API_KEYS.VIRUSTOTAL }
@@ -230,8 +220,8 @@ async function fetchVTResult(tabId, elementId, analysisId, retries) {
     if (!analysisRes.ok) {
       if (analysisRes.status === 404 || analysisRes.status === 202) {
         const retryAfter = analysisRes.headers.get("Retry-After");
-        const waitMs = retryAfter ? Math.min(parseInt(retryAfter) * 1000, 15000) : 5000;
-        scheduleVTCheck(tabId, elementId, analysisId, waitMs, retries + 1);
+        const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : 5000;
+        scheduleVTCheck(tabId, elementId, analysisId, waitMs);
         return;
       }
       await updateElement(tabId, elementId, {
@@ -263,7 +253,7 @@ async function fetchVTResult(tabId, elementId, analysisId, retries) {
       });
     }
   } catch (error) {
-    scheduleVTCheck(tabId, elementId, analysisId, 5000, retries + 1);
+    scheduleVTCheck(tabId, elementId, analysisId, 5000);
   }
 }
 
@@ -466,11 +456,7 @@ async function handleScan(context, tabId, frameId) {
   console.log(`  → ${context.elements.length} elements found`);
   
   const scanned = await storeAndDiffElements(context.elements, tabId, frameId);
-  const unsafeElements = await scanElements(scanned.urlElements, scanned.nonUrlElements, tabId, context.visibleText);
-  // Batch AI explanation for all unsafe elements in a single OpenRouter call
-  if (unsafeElements.length > 0) {
-    generateBatchAIExplanation(tabId, unsafeElements, context.visibleText).catch(() => {});
-  }
+  await scanElements(scanned.urlElements, scanned.nonUrlElements, tabId, context.visibleText);
 }
 
 // Handle incremental elements from MutationObserver (NEW_ELEMENTS message)
@@ -479,7 +465,6 @@ async function handleNewElements(elements, tabId, frameId) {
   console.log(`[ScamShield] Incremental: ${elements.length} new elements`);
 
   const scanned = await storeAndDiffElements(elements, tabId, frameId);
-  // No visibleText for incremental scans — skip AI explanations, rely on GSB/VT
   await scanElements(scanned.urlElements, scanned.nonUrlElements, tabId, "");
 }
 
@@ -526,127 +511,15 @@ async function storeAndDiffElements(elements, tabId, frameId) {
   };
 }
 
-// Batch AI explanation — single OpenRouter call for all unsafe elements
-async function generateBatchAIExplanation(tabId, unsafeItems, contextText) {
-  if (!contextText || unsafeItems.length === 0) return;
-  const itemList = unsafeItems.map(e => `- ${e.type}: ${e.url || e.text} (${e.details || 'flagged'})`).join('\n');
-  const prompt = `For each of these flagged elements, generate a SHORT explanation (max 15 words) and a LONG explanation (max 50 words) for why it's dangerous.
-
-Elements:
-${itemList}
-
-Return a JSON array: [{"short": "...", "long": "..."}, ...] matching the element order.`;
-
-  try {
-    const response = await fetch(APIS.OPENROUTER, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${API_KEYS.OPENROUTER}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://scamshield.extension",
-        "X-Title": "ScamShield Extension"
-      },
-      body: JSON.stringify({
-        model: "stepfun/step-3.5-flash:free",
-        messages: [
-          { role: "system", content: "You are a security analyst. Return only valid JSON." },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.3,
-        max_tokens: 800
-      })
-    });
-    if (!response.ok) throw new Error(`OpenRouter error: ${response.status}`);
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "[]";
-    const parsed = JSON.parse(content);
-    if (Array.isArray(parsed)) {
-      for (let i = 0; i < Math.min(parsed.length, unsafeItems.length); i++) {
-        const ai = parsed[i];
-        await updateElement(tabId, unsafeItems[i].elementId, {
-          shortExplanation: ai.short || "Potentially unsafe.",
-          longExplanation: ai.long || "This element shows risk indicators."
-        });
-      }
-    }
-  } catch {
-    // Fallback: use generic explanations
-    for (const item of unsafeItems) {
-      await updateElement(tabId, item.elementId, {
-        shortExplanation: `Flagged: ${item.details || 'suspicious patterns'}`,
-        longExplanation: `This ${item.type} has been flagged as potentially dangerous. Exercise caution.`
-      }).catch(() => {});
-    }
-  }
+// Fire-and-forget AI explanation for individual unsafe element
+function fireAIExplanation(tabId, element, contextText, details) {
+  if (!contextText) return;
+  generateAIExplanation(element.url, element.type, contextText, details)
+    .then(ai => updateElement(tabId, element.elementId, ai))
+    .catch(() => {});
 }
 
-// ── VT RATE-LIMITED QUEUE (free tier: 4 req/min) ──────────────────
-const VT_BATCH_SIZE = 4;
-const VT_BATCH_INTERVAL_MS = 16000; // ~4 per minute with buffer
-let vtQueue = [];
-let vtProcessing = false;
-
-function enqueueVT(tabId, elementIds, url, retries) {
-  vtQueue.push({ tabId, elementIds, url, retries: retries || 0 });
-  if (!vtProcessing) processVTQueue();
-}
-
-async function processVTQueue() {
-  vtProcessing = true;
-  while (vtQueue.length > 0) {
-    const batch = vtQueue.splice(0, VT_BATCH_SIZE);
-    await Promise.allSettled(batch.map(async (item) => {
-      if (item.retries >= 3) {
-        // Give up after 3 retries — mark all elements as error
-        for (const eid of item.elementIds) {
-          await updateElement(item.tabId, eid, {
-            status: "error", source: "vt",
-            shortExplanation: "VT scan failed after retries.",
-            longExplanation: "VirusTotal could not process this URL after 3 attempts."
-          });
-        }
-        return;
-      }
-      const vt = await checkVirusTotal(item.url);
-      if (vt.status === "pending" && vt.analysisId) {
-        // Mark all elements as pending, schedule alarm for result
-        for (const eid of item.elementIds) {
-          await updateElement(item.tabId, eid, {
-            status: "pending", riskScore: 0, source: "vt",
-            shortExplanation: "Scanning via VirusTotal...",
-            longExplanation: "This element is being analyzed by VirusTotal. Results will appear shortly."
-          });
-          scheduleVTCheck(item.tabId, eid, vt.analysisId, 5000);
-        }
-      } else if (vt.status === "unsafe") {
-        for (const eid of item.elementIds) {
-          await updateElement(item.tabId, eid, {
-            status: "unsafe", riskScore: vt.score, source: "vt",
-            details: `VT: ${vt.details}`,
-            shortExplanation: `Dangerous: ${vt.details}`,
-            longExplanation: `This element has been flagged by security services: VT: ${vt.details}. It is recommended to avoid interacting with it.`
-          });
-        }
-      } else if (vt.status === "safe") {
-        for (const eid of item.elementIds) {
-          await updateElement(item.tabId, eid, {
-            status: "safe", riskScore: 0, source: "vt",
-            shortExplanation: "Safe",
-            longExplanation: "This element passed VirusTotal security checks."
-          });
-        }
-      } else {
-        // Error — retry later
-        item.retries++;
-        vtQueue.push(item);
-      }
-    }));
-    if (vtQueue.length > 0) await new Promise(r => setTimeout(r, VT_BATCH_INTERVAL_MS));
-  }
-  vtProcessing = false;
-}
-
-// ── SCAN ELEMENTS: dedup URLs, sequential GSB→VT, fan-out results ──
+// ── SCAN ELEMENTS: dedup URLs, concurrent GSB+VT, per-element AI ──
 async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
   // Process non-URL elements concurrently
   await Promise.allSettled(nonUrlElements.map(element =>
@@ -658,47 +531,84 @@ async function scanElements(urlElements, nonUrlElements, tabId, contextText) {
   ));
 
   // Deduplicate: group elements by URL so each URL is scanned once
-  const urlMap = new Map(); // url -> { elementIds, elements }
+  const urlMap = new Map();
   for (const el of urlElements) {
-    if (!urlMap.has(el.url)) urlMap.set(el.url, { elementIds: [], elements: [] });
-    const entry = urlMap.get(el.url);
-    entry.elementIds.push(el.elementId);
-    entry.elements.push(el);
+    if (!urlMap.has(el.url)) urlMap.set(el.url, []);
+    urlMap.get(el.url).push(el);
   }
 
-  // Collect unsafe elements for batch AI explanation
-  const unsafeResults = []; // { elementId, type, url, details }
+  // Scan each unique URL — GSB+VT concurrently, fan-out to all elements sharing the URL
+  await Promise.allSettled(Array.from(urlMap.entries()).map(async ([url, elements]) => {
+    const elementIds = elements.map(e => e.elementId);
 
-  // Scan each unique URL — GSB first, VT only if GSB returns safe
-  const promises = [];
-  for (const [url, { elementIds, elements }] of urlMap) {
-    promises.push((async () => {
-      const gsb = await checkGoogleSafeBrowsing(url);
+    // Run both GSB and VT concurrently
+    const [gsbResult, vtResult] = await Promise.allSettled([
+      checkGoogleSafeBrowsing(url),
+      checkVirusTotal(url)
+    ]);
 
-      if (gsb.status === "unsafe") {
-        // GSB flagged it — mark all elements unsafe, skip VT entirely
-        for (const eid of elementIds) {
-          await updateElement(tabId, eid, {
-            status: "unsafe", riskScore: gsb.score, source: "gsb",
-            details: `GSB: ${gsb.details}`,
-            shortExplanation: `Dangerous: ${gsb.details}`,
-            longExplanation: `This element has been flagged by Google Safe Browsing: ${gsb.details}. It is recommended to avoid interacting with it.`
-          });
-        }
-        // Collect for batch AI
-        for (const el of elements) {
-          unsafeResults.push({ elementId: el.elementId, type: el.type, url: el.url, details: `GSB: ${gsb.details}` });
-        }
-        return;
+    const gsb = gsbResult.status === "fulfilled" ? gsbResult.value : { status: "error" };
+    const vt = vtResult.status === "fulfilled" ? vtResult.value : { status: "error" };
+
+    // If GSB flags unsafe, mark all elements immediately
+    if (gsb.status === "unsafe") {
+      for (const eid of elementIds) {
+        await updateElement(tabId, eid, {
+          status: "unsafe", riskScore: gsb.score, source: "gsb",
+          details: `GSB: ${gsb.details}`,
+          shortExplanation: `Dangerous: ${gsb.details}`,
+          longExplanation: `This element has been flagged by Google Safe Browsing: ${gsb.details}. It is recommended to avoid interacting with it.`
+        });
       }
+      // Individual AI explanation for each element
+      for (const el of elements) {
+        fireAIExplanation(tabId, el, contextText, `GSB: ${gsb.details}`);
+      }
+      // VT result still pending? Schedule check for additional data
+      if (vt.status === "pending" && vt.analysisId) {
+        for (const eid of elementIds) scheduleVTCheck(tabId, eid, vt.analysisId, 5000);
+      }
+      return;
+    }
 
-      // GSB returned safe or error — queue VT as secondary confirmation
-      enqueueVT(tabId, elementIds, url);
-    })());
-  }
+    // If VT submitted successfully, mark all as pending
+    if (vt.status === "pending" && vt.analysisId) {
+      for (const eid of elementIds) {
+        await updateElement(tabId, eid, {
+          status: "pending", riskScore: 0, source: "vt",
+          shortExplanation: "Scanning via VirusTotal...",
+          longExplanation: "This element is being analyzed by VirusTotal. Results will appear shortly."
+        });
+        scheduleVTCheck(tabId, eid, vt.analysisId, 5000);
+      }
+      return;
+    }
 
-  await Promise.allSettled(promises);
-  return unsafeResults;
+    // VT returned unsafe — mark all elements
+    if (vt.status === "unsafe") {
+      for (const eid of elementIds) {
+        await updateElement(tabId, eid, {
+          status: "unsafe", riskScore: vt.score, source: "vt",
+          details: `VT: ${vt.details}`,
+          shortExplanation: `Dangerous: ${vt.details}`,
+          longExplanation: `This element has been flagged by security services: VT: ${vt.details}. It is recommended to avoid interacting with it.`
+        });
+      }
+      for (const el of elements) {
+        fireAIExplanation(tabId, el, contextText, `VT: ${vt.details}`);
+      }
+    } else {
+      // Both safe or error
+      for (const eid of elementIds) {
+        await updateElement(tabId, eid, {
+          status: "safe", riskScore: 0,
+          source: gsb.status === "safe" ? "gsb" : vt.status === "safe" ? "vt" : "manual",
+          shortExplanation: "Safe",
+          longExplanation: "This element passed security checks and appears safe."
+        });
+      }
+    }
+  }));
 }
 
 // Message listener
