@@ -196,10 +196,22 @@ async function checkVirusTotal(url) {
   }
 }
 
-// Event-driven VT result check — single fetch, no polling loop
+// Event-driven VT result check via chrome.alarms (survives service worker restart)
 function scheduleVTCheck(tabId, elementId, analysisId, delayMs) {
-  setTimeout(() => fetchVTResult(tabId, elementId, analysisId), delayMs);
+  const alarmName = `vt:${tabId}:${elementId}`;
+  chrome.alarms.create(alarmName, { delayInMinutes: Math.max(delayMs / 60000, 0.05) });
+  // Store context in session storage for the alarm handler
+  chrome.storage.session.set({ [alarmName]: { tabId, elementId, analysisId } });
 }
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (!alarm.name.startsWith('vt:')) return;
+  const ctx = await chrome.storage.session.get(alarm.name);
+  const data = ctx[alarm.name];
+  if (!data) return;
+  chrome.storage.session.remove(alarm.name);
+  fetchVTResult(data.tabId, data.elementId, data.analysisId);
+});
 
 async function fetchVTResult(tabId, elementId, analysisId) {
   try {
