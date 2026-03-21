@@ -10,6 +10,8 @@ const ScamShieldScanner = (() => {
   let debounceTimer = null;
   let isScanning = false;
   let lastPageResult = null;
+  let lastVerdict = "";
+  let bannerDismissed = false;
 
   function normalizeUrl(url) {
     try {
@@ -171,17 +173,26 @@ const ScamShieldScanner = (() => {
   function syncPageWarnings(result) {
     lastPageResult = result;
 
+    // Reset dismissal flag when the verdict changes
+    if (result?.verdict !== lastVerdict) {
+      bannerDismissed = false;
+      lastVerdict = result?.verdict || "";
+    }
+
     if (!window.ScamShieldUI) return;
 
-    if (!result || result.verdict === "safe") {
+    if (!result || result.verdict === "safe" || result.verdict === "not_scannable") {
       window.ScamShieldUI.removeWarningUI();
+      bannerDismissed = false;
       return;
     }
 
     if (result.verdict === "suspicious") {
+      if (bannerDismissed) return;
       window.ScamShieldUI.showSuspiciousBanner({
         score: result.score,
         onOpenPanel: openSidePanel,
+        onDismiss: () => { bannerDismissed = true; },
       });
       return;
     }

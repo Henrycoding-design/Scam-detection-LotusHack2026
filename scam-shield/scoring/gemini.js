@@ -1,19 +1,19 @@
-// scoring/gemini.js
+// scoring/gemini.js — now uses OpenRouter (free model) instead of paid Gemini
 
-// WARNING: Hardcoding API keys in a Chrome Extension is insecure for production.
-// Anyone can inspect the extension files and steal the key.
-// We are doing this TEMPORARILY for Step 2 testing. 
-// In Step 3, this entire file will be moved to a secure backend server.
-const GEMINI_API_KEY = "AIzaSyBU6QgPXBpGkxGzTye-rWvk7_BMDdG8fhA"; 
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+// You need a free OpenRouter API key from https://openrouter.ai/keys
+// Free models like meta-llama/llama-3.1-8b-instruct:free require no credits.
+const OPENROUTER_API_KEY = "sk-or-v1-YOUR_FREE_KEY_HERE";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export function buildHeuristicFallbackExplanation({ verdict, reasons }) {
+  const reasonText = reasons.length > 0
+    ? reasons.map(r => typeof r === "string" ? r : r.reason).join(". ")
+    : "Several scam signals were detected on this page.";
+
   return {
     verdict,
     headline: verdict === "dangerous" ? "High-risk page detected" : "This page looks suspicious",
-    reason: reasons.length > 0
-      ? reasons.join(". ")
-      : "Several scam signals were detected on this page.",
+    reason: reasonText,
     recommended_action: verdict === "dangerous"
       ? "Leave the page and do not enter any information."
       : "Review the page carefully before clicking or sharing details.",
@@ -21,8 +21,8 @@ export function buildHeuristicFallbackExplanation({ verdict, reasons }) {
 }
 
 export async function getGeminiExplanation({ url, score, signals, visibleText }) {
-  // Only call Gemini if score is suspicious or dangerous (saves quota)
   if (score < 20) return null;
+  if (OPENROUTER_API_KEY.includes("YOUR_FREE_KEY_HERE")) return null;
 
   const topSignals = signals
     .slice()
@@ -31,7 +31,7 @@ export async function getGeminiExplanation({ url, score, signals, visibleText })
     .map((s) => `- ${s.reason}`)
     .join("\n");
 
-  const textSnippet = visibleText.slice(0, 600); // keep prompt lean
+  const textSnippet = visibleText.slice(0, 600);
 
   const prompt = `You are a cybersecurity assistant. Analyze this web page and explain the risk clearly to a non-technical user.
 
@@ -53,31 +53,32 @@ Respond with a JSON object only, no markdown, in this exact shape:
 }`;
 
   try {
-    const response = await fetch(GEMINI_URL, {
+    const response = await fetch(OPENROUTER_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+        "HTTP-Referer": "https://github.com/Henrycoding-design/Scam-detection-LotusHack2026",
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.1,       // low temp = consistent, factual output
-          responseMimeType: "application/json",
-        },
+        model: "meta-llama/llama-3.1-8b-instruct:free",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.1,
       }),
     });
 
     if (!response.ok) {
-      console.warn("[ScamShield] Gemini API error:", response.status);
+      console.warn("[ScamShield] OpenRouter API error:", response.status);
       return null;
     }
 
     const data = await response.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const rawText = data.choices?.[0]?.message?.content || "";
 
-    // Strip any accidental markdown fences
     const cleaned = rawText.replace(/```json|```/g, "").trim();
     return JSON.parse(cleaned);
   } catch (err) {
-    console.warn("[ScamShield] Gemini parse error:", err);
-    return null; // graceful fallback — scoring still works without it
+    console.warn("[ScamShield] AI parse error:", err);
+    return null;
   }
 }

@@ -59,7 +59,7 @@
     };
   }
 
-  function showSuspiciousBanner({ score, onOpenPanel }) {
+  function showSuspiciousBanner({ score, onOpenPanel, onDismiss }) {
     if (document.getElementById("scamshield-suspicious-banner")) return;
 
     const banner = document.createElement("div");
@@ -88,7 +88,10 @@
 
     document.body.appendChild(banner);
     banner.querySelector("#ss-open-panel").onclick = onOpenPanel;
-    banner.querySelector("#ss-dismiss-banner").onclick = () => banner.remove();
+    banner.querySelector("#ss-dismiss-banner").onclick = () => {
+      banner.remove();
+      if (onDismiss) onDismiss();
+    };
   }
 
   window.ScamShieldUI = {

@@ -52,7 +52,17 @@ function render(state) {
     ${reasons.length ? `
       <div class="card">
         <div class="pill muted">Top Reasons</div>
-        ${reasons.map((reason) => `<div class="reason">${escapeHtml(reason)}</div>`).join("")}
+        ${reasons.map((r) => {
+          const text = typeof r === "string" ? r : r.reason;
+          const detail = typeof r === "string" ? "" : (r.detail || "");
+          if (detail) {
+            return `<div class="reason-expandable" onclick="this.classList.toggle('expanded')">
+              <div class="reason-header">${escapeHtml(text)}</div>
+              <div class="reason-detail">${escapeHtml(detail)}</div>
+            </div>`;
+          }
+          return `<div class="reason">${escapeHtml(text)}</div>`;
+        }).join("")}
       </div>
     ` : ""}
 
