@@ -1,5 +1,17 @@
 // background.js
-importScripts('config.js');
+// API keys loaded from config.js (gitignored). Copy config.example.js -> config.js and fill in your keys.
+let API_KEYS;
+try {
+  importScripts('config.js');
+} catch (e) {
+  console.warn('[ScamShield] config.js not found, API calls will fail. Copy config.example.js to config.js and add your keys.');
+  API_KEYS = {
+    GOOGLE_SAFE_BROWSING: "",
+    VIRUSTOTAL: "",
+    OPENROUTER: "",
+    OPENAI: "",
+  };
+}
 
 // Free tier URLs (manifest needs host_permissions for these)
 const APIS = {
@@ -362,7 +374,7 @@ Return JSON: {"short": "...", "long": "..."}. Be concise and factual.`;
 // OpenAI Moderation API — FREE, unlimited, ~200ms
 async function checkOpenAIModeration(text) {
   try {
-    if (!text || API_KEYS.OPENAI === "BUILTIN_OPENAI_KEY_PLACEHOLDER")
+    if (!text || !API_KEYS.OPENAI || API_KEYS.OPENAI === "BUILTIN_OPENAI_KEY_PLACEHOLDER")
       return { flagged: false, score: 0, categories: {} };
     const res = await fetch(APIS.OPENAI_MOD, {
       method: "POST",
