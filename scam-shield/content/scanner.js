@@ -3,11 +3,13 @@
 const ScamShieldScanner = (() => {
   const FRAME_ID = Math.random().toString(36).substring(2, 10);
   const SELECTOR = "a[href], form[action], iframe[src], video[src], audio[src], embed[src], object[data], input[type=file]";
-  const processedNodes = new WeakSet();
+  let processedNodes = new WeakSet();
   const scannedHashes = new Set(); // content-hash dedup: scan each unique text only once
   const activeBubbleIds = new Set(); // only reposition bubbles that exist
   let elementRiskMap = {};
   let debounceTimer = null;
+  let currentUrl = location.href;
+  let observer = null;
 
   // ── TEXT DETECTION PATTERNS ─────────────────────────────────────────
   const CRYPTO_RE = { ethereum: /\b(0x[a-fA-F0-9]{40})\b/g, bitcoinBech32: /\b(bc1[ac-hj-np-z02-9]{11,71})\b/gi, bitcoinLegacy: /\b([13][a-km-zA-HJ-NP-Z1-9]{25,34})\b/g, solana: /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/g, tron: /\b(T[A-Za-z1-9]{33})\b/g, litecoin: /\b([LM3][a-km-zA-HJ-NP-Z1-9]{26,33})\b/g, xrp: /\b(r[1-9A-HJ-NP-Za-km-z]{25,34})\b/g };
@@ -129,7 +131,11 @@ const ScamShieldScanner = (() => {
 
   // ── MUTATION OBSERVER (single, handles elements + text + cleanup) ──
   function startObserver() {
-    const observer = new MutationObserver(mutations => {
+    if (observer) observer.disconnect();
+    observer = new MutationObserver(mutations => {
+      // Detect SPA navigation (URL changed while page is still loaded)
+      if (location.href !== currentUrl) { reinit(); return; }
+
       const added = [], removed = [];
       let hasTextNodes = false;
       for (const m of mutations) {
@@ -278,6 +284,32 @@ const ScamShieldScanner = (() => {
     }
   }, true);
 
+  // ── REINIT ON SPA NAVIGATION ──────────────────────────────────────
+  function reinit() {
+    // Stop old observer to prevent stale callbacks
+    if (observer) observer.disconnect();
+    clearTimeout(debounceTimer);
+
+    // Reset local state
+    processedNodes = new WeakSet();
+    scannedHashes.clear();
+    elementRiskMap = {};
+    // Remove all existing bubbles
+    for (const id of activeBubbleIds) document.getElementById(`ss-bubble-${id}`)?.remove();
+    activeBubbleIds.clear();
+
+    currentUrl = location.href;
+
+    // Notify background to clear old tab data
+    sendToBackground({ type: 'PAGE_NAVIGATING' });
+
+    // Re-scan as a fresh page
+    const context = { url: location.href, title: document.title, visibleText: extractFullVisibleText(), timestamp: Date.now(), elements: extractAll() };
+    sendToBackground({ type: 'PAGE_LOADED', context });
+    startObserver();
+    analyzeText(context.visibleText);
+  }
+
   // ── INIT ────────────────────────────────────────────────────────────
   function init() {
     const context = { url: location.href, title: document.title, visibleText: extractFullVisibleText(), timestamp: Date.now(), elements: extractAll() };
@@ -285,6 +317,10 @@ const ScamShieldScanner = (() => {
     startObserver();
     // Initial text scan — uses hash so it only runs once
     analyzeText(context.visibleText);
+
+    // Fallback: detect SPA navigations via hashchange/popstate
+    window.addEventListener('hashchange', () => { if (location.href !== currentUrl) reinit(); });
+    window.addEventListener('popstate', () => { if (location.href !== currentUrl) reinit(); });
   }
 
   return { init };

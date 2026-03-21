@@ -18,15 +18,17 @@ export default function App() {
   // Initialize connection and fetch initial data
   useEffect(() => {
     let connection: ReturnType<typeof connectToBackground> | null = null;
+    let currentTabId: number | null = null;
 
     const init = async () => {
       try {
         const activeTabId = await getActiveTabId();
+        currentTabId = activeTabId;
         setTabId(activeTabId);
-        
+
         connection = connectToBackground(activeTabId);
         setConnected(true);
-        
+
         connection.onMessage((message) => {
           if (message.type === 'ELEMENT_UPDATE') {
             setElements(prev => {
@@ -34,26 +36,34 @@ export default function App() {
               next.set(message.elementId, message.data);
               return next;
             });
+          } else if (message.type === 'TAB_DATA') {
+            // Full data sync for a tab (sent after ACTIVE_TAB_CHANGED or INIT)
+            currentTabId = message.tabId;
+            setTabId(message.tabId);
+            const map = new Map<string, ElementData>();
+            message.elements.forEach((el: ElementData) => map.set(el.elementId, el));
+            setElements(map);
+          } else if (message.type === 'TAB_CLEARED') {
+            // Tab navigated — clear dashboard display
+            setElements(new Map());
           }
         });
-        
-        // Request initial full sync
-        chrome.runtime.sendMessage(
-          { type: 'GET_TAB_DATA', tabId: activeTabId },
-          (response: { elements?: ElementData[] }) => {
-            if (response.elements) {
-              const map = new Map<string, ElementData>();
-              response.elements.forEach(el => map.set(el.elementId, el));
-              setElements(map);
-            }
+
+        // Listen for active tab changes
+        chrome.tabs.onActivated.addListener((activeInfo) => {
+          if (activeInfo.tabId !== currentTabId) {
+            currentTabId = activeInfo.tabId;
+            setTabId(activeInfo.tabId);
+            setElements(new Map()); // Clear immediately for responsiveness
+            connection?.port.postMessage({ type: 'ACTIVE_TAB_CHANGED', tabId: activeInfo.tabId });
           }
-        );
+        });
       } catch (err) {
         setError('Failed to connect to ScamShield background script. Is the extension loaded?');
         console.error(err);
       }
     };
-    
+
     init();
     return () => connection?.disconnect();
   }, []);

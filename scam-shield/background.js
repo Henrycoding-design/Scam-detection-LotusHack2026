@@ -122,6 +122,13 @@ async function clearTabData(tabId) {
       cursor.continue();
     }
   };
+  // Notify dashboard ports that this tab's data was cleared
+  const dashSet = dashboardPorts.get(tabId);
+  if (dashSet) {
+    dashSet.forEach(port => {
+      try { port.postMessage({ type: 'TAB_CLEARED', tabId }); } catch {}
+    });
+  }
 }
 
 // Google Safe Browsing API
@@ -595,6 +602,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (tabId !== undefined) {
       handleTextThreats(message.threats, message.pageUrl, message.pageText, tabId, frameId).catch(console.error);
     }
+  } else if (message.type === "PAGE_NAVIGATING") {
+    const tabId = sender.tab?.id;
+    if (tabId !== undefined) {
+      clearTabData(tabId);
+    }
   } else if (message.type === "GET_TAB_DATA") {
     const tabId = message.tabId;
     getAllElementsForTab(tabId).then(elements => {
@@ -622,20 +634,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Dashboard port connection handler
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'dashboard') return;
+  let activeTabId = null;
+
   port.onMessage.addListener((msg) => {
     if (msg.type === 'INIT_DASHBOARD') {
-      const tabId = msg.tabId;
-      if (!dashboardPorts.has(tabId)) {
-        dashboardPorts.set(tabId, new Set());
+      activeTabId = msg.tabId;
+      if (!dashboardPorts.has(activeTabId)) {
+        dashboardPorts.set(activeTabId, new Set());
       }
-      dashboardPorts.get(tabId).add(port);
+      dashboardPorts.get(activeTabId).add(port);
       port.onDisconnect.addListener(() => {
-        const set = dashboardPorts.get(tabId);
-        if (set) {
-          set.delete(port);
-          if (set.size === 0) dashboardPorts.delete(tabId);
+        if (activeTabId !== null) {
+          const set = dashboardPorts.get(activeTabId);
+          if (set) {
+            set.delete(port);
+            if (set.size === 0) dashboardPorts.delete(activeTabId);
+          }
         }
       });
+    } else if (msg.type === 'ACTIVE_TAB_CHANGED') {
+      // Unregister from old tab
+      if (activeTabId !== null) {
+        const oldSet = dashboardPorts.get(activeTabId);
+        if (oldSet) { oldSet.delete(port); if (oldSet.size === 0) dashboardPorts.delete(activeTabId); }
+      }
+      activeTabId = msg.tabId;
+      // Register for new tab
+      if (!dashboardPorts.has(activeTabId)) dashboardPorts.set(activeTabId, new Set());
+      dashboardPorts.get(activeTabId).add(port);
+      // Send existing data immediately
+      getAllElementsForTab(activeTabId).then(elements => {
+        try { port.postMessage({ type: 'TAB_DATA', tabId: activeTabId, elements: Array.from(elements.values()) }); } catch {}
+      }).catch(() => {});
     }
   });
 });
@@ -738,11 +768,27 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   clearTabData(tabId);
 });
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === "loading") {
-    clearTabData(tabId);
-  }
+// Clear tab data on full page navigations (replaces tabs.onUpdated)
+chrome.webNavigation?.onCommitted?.addListener((details) => {
+  if (details.frameId === 0) clearTabData(details.tabId);
 });
+
+// Clear tab data on SPA navigations (history.pushState / replaceState)
+chrome.webNavigation?.onHistoryStateUpdated?.addListener((details) => {
+  if (details.frameId === 0) clearTabData(details.tabId);
+});
+
+// Clear tab data on hash changes
+chrome.webNavigation?.onReferenceFragmentUpdated?.addListener((details) => {
+  if (details.frameId === 0) clearTabData(details.tabId);
+});
+
+// Fallback: if webNavigation is unavailable
+if (!chrome.webNavigation) {
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === "loading") clearTabData(tabId);
+  });
+}
 
 // Open side panel when extension icon is clicked
 chrome.sidePanel
