@@ -69,9 +69,10 @@ Respond with a JSON object only, no markdown, in this exact shape:
         "HTTP-Referer": "https://github.com/Henrycoding-design/Scam-detection-LotusHack2026",
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-3.1-8b-instruct:free",
+        model: "stepfun/step-3.5-flash:free",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
+        reasoning: { enabled: false },
       }),
     });
 
