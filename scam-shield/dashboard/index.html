@@ -4,12 +4,48 @@
   <meta charset="utf-8">
   <title>ScamShield Dashboard</title>
   <style>
-    body { padding: 16px; font-family: system-ui, sans-serif; background: #1a1a2e; color: white; }
-    h2 { margin-top: 0; color: #e63946; }
+    :root {
+      color-scheme: dark;
+      --panel-bg: #131320;
+      --card-bg: #1b1d2d;
+      --border: #2d3251;
+      --danger: #ff5867;
+      --warn: #f3b45c;
+      --text: #f5f5f8;
+      --muted: #b7b8c9;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 18px;
+      font-family: system-ui, sans-serif;
+      background: radial-gradient(circle at top, #20243c, var(--panel-bg) 55%);
+      color: var(--text);
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 1.4rem;
+    }
+    p { color: var(--muted); }
+    .stack { display: grid; gap: 14px; }
+    .card {
+      background: rgba(27, 29, 45, 0.95);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.2);
+    }
   </style>
 </head>
 <body>
-  <h2>ScamShield Dashboard</h2>
-  <p>Dashboard coming soon...</p>
+  <div class="stack">
+    <header>
+      <h1>ScamShield Analysis</h1>
+      <p>Detailed explanation for the current page and the last blocked link.</p>
+    </header>
+    <div id="dashboard-root" class="stack"></div>
+  </div>
+  <script type="module" src="./dashboard.js"></script>
 </body>
 </html>
