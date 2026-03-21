@@ -1,6 +1,7 @@
 // scoring/openai.js
 
 
+
 // WARNING: Hardcoding API keys in a Chrome Extension is insecure for production.
 // Anyone can inspect the extension files and steal the key.
 // We are doing this TEMPORARILY for demo and debugging only.
