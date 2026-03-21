@@ -38,7 +38,7 @@ app.post("/analyze", async (req, res) => {
 app.get("/health", (_, res) => res.json({ ok: true }));
 
 async function startServer() {
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

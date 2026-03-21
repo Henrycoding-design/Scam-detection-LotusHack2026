@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "npm run build:sidebar && vite build",
-    "build:sidebar": "npm --prefix sidebar install && npm --prefix sidebar run build && rm -rf scam-shield/sidebar && cp -r sidebar/dist scam-shield/sidebar",
+    "build:sidebar": "npm --prefix sidebar install && npm --prefix sidebar run build && node scripts/sync-sidebar.mjs",
+    "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
