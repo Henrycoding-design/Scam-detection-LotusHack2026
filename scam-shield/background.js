@@ -12,56 +12,78 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+const API_URL = "https://ais-dev-fjmnvjtl3hg4ckuctxfs2e-625242509178.asia-southeast1.run.app"; // swap for deployed URL before demo
+
 async function handleScan(context, tabId) {
   console.log("[ScamShield] Scanning:", context.url);
 
-  // ── FAST LAYER: heuristic scoring ─────────────────────────────────
-  const { score: pageScore, signals } = scorePageContext(context);
-
-  // Score each link individually for the click interceptor
-  const riskMap = {};
-  const pageHostname = new URL(context.url).hostname;
-  for (const link of context.links) {
-    const { score } = scoreSingleLink(link.href, pageHostname);
-    riskMap[link.href] = score;
+  let result;
+  try {
+    const res = await fetch(`${API_URL}/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: context.url,
+        links: context.links.map((l) => l.href),
+        text: context.visibleText.slice(0, 3000),
+        event: "load",
+      }),
+    });
+    result = await res.json();
+  } catch (err) {
+    console.warn("[ScamShield] Backend unreachable, falling back to local scoring");
+    // Fall back to local heuristics from Step 2 if backend is down
+    const { scorePageContext } = await import("./scoring/heuristics.js");
+    const { score, signals } = scorePageContext(context);
+    result = {
+      risk: score,
+      verdict: score >= 70 ? "dangerous" : score >= 30 ? "suspicious" : "safe",
+      reasons: signals.slice(0, 3).map((s) => s.reason),
+      signals: signals,
+    };
   }
 
-  console.log(`[ScamShield] Page score: ${pageScore}, top signal: ${signals[0]?.type}`);
+  const pageScore = result.risk;
+  const signals = result.signals || [];
 
-  // Send scores to content script immediately (don't wait for Gemini)
+  // Build per-link riskMap — score links from backend result
+  // For hackathon simplicity: inherit the page score for all links
+  const riskMap = {};
+  context.links.forEach((l) => { riskMap[l.href] = pageScore; });
+
+  console.log(`[ScamShield] Page score: ${pageScore}, verdict: ${result.verdict}`);
+
+  // Send to content script
   if (tabId) {
     chrome.tabs.sendMessage(tabId, { type: "RISK_SCORES", riskMap }).catch(() => {});
+    chrome.tabs.sendMessage(tabId, {
+      type: "PAGE_VERDICT",
+      score: pageScore,
+      verdict: result.verdict,
+      reasons: result.reasons,
+    }).catch(() => {});
   }
 
-  // ── LLM LAYER: Gemini explanation (async, non-blocking) ───────────
-  if (pageScore >= 30) {
-    const explanation = await getGeminiExplanation({
+  if (pageScore >= 30 && result.explanation && tabId) {
+    chrome.tabs.sendMessage(tabId, {
+      type: "PAGE_EXPLANATION",
+      score: pageScore,
+      explanation: result.explanation,
+      signals: signals.slice(0, 3),
+    }).catch(() => {});
+  }
+
+  // Store for sidebar
+  chrome.storage.session.set({
+    lastScan: {
       url: context.url,
       score: pageScore,
-      signals,
-      visibleText: context.visibleText,
-    });
-
-    if (explanation && tabId) {
-      chrome.tabs.sendMessage(tabId, {
-        type: "PAGE_EXPLANATION",
-        score: pageScore,
-        explanation,
-        signals: signals.slice(0, 3),
-      }).catch(() => {});
-    }
-
-    // Persist to session storage for the side panel to read
-    chrome.storage.session.set({
-      lastScan: {
-        url: context.url,
-        score: pageScore,
-        signals: signals.slice(0, 5),
-        explanation,
-        timestamp: Date.now(),
-      },
-    });
-  }
+      verdict: result.verdict,
+      reasons: result.reasons,
+      explanation: result.explanation,
+      timestamp: Date.now(),
+    },
+  });
 }
 
 // Open side panel when extension icon is clicked
