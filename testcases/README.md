@@ -97,3 +97,6 @@ python3 -m http.server 8000
 - Scam pages with hostname checks: `http://paypal-login-security-review-demo.xyz:8000/scam/paypal-security-alert.html`
 
 `file://` is not the intended path for these testcases. Use `http://localhost:8000/...` for the fast path, and use the mapped demo domains when you want the hostname-based scam checks to show up as part of the demo.
+
+## Format:
+http://the-registered-host-lines/scam/the-html
