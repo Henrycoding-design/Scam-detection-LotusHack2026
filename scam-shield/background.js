@@ -12,75 +12,63 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-const API_URL = "https://ais-dev-fjmnvjtl3hg4ckuctxfs2e-625242509178.asia-southeast1.run.app"; // swap for deployed URL before demo
-
 async function handleScan(context, tabId) {
   console.log("[ScamShield] Scanning:", context.url);
 
-  let result;
-  try {
-    const res = await fetch(`${API_URL}/analyze`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: context.url,
-        links: context.links.map((l) => l.href),
-        text: context.visibleText.slice(0, 3000),
-        event: "load",
-      }),
+  const { score, signals } = scorePageContext(context);
+  const verdict = score >= 70 ? "dangerous" : score >= 30 ? "suspicious" : "safe";
+  const reasons = signals
+    .slice()
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 3)
+    .map((s) => s.reason);
+
+  let explanation = null;
+  if (score >= 20) {
+    explanation = await getGeminiExplanation({
+      url: context.url,
+      score,
+      signals,
+      visibleText: context.visibleText.slice(0, 3000),
     });
-    result = await res.json();
-  } catch (err) {
-    console.warn("[ScamShield] Backend unreachable, falling back to local scoring");
-    // Fall back to local heuristics from Step 2 if backend is down
-    const { scorePageContext } = await import("./scoring/heuristics.js");
-    const { score, signals } = scorePageContext(context);
-    result = {
-      risk: score,
-      verdict: score >= 70 ? "dangerous" : score >= 30 ? "suspicious" : "safe",
-      reasons: signals.slice(0, 3).map((s) => s.reason),
-      signals: signals,
-    };
   }
 
-  const pageScore = result.risk;
-  const signals = result.signals || [];
+  const pageScore = score;
 
-  // Build per-link riskMap — score links from backend result
-  // For hackathon simplicity: inherit the page score for all links
   const riskMap = {};
-  context.links.forEach((l) => { riskMap[l.href] = pageScore; });
+  context.links.forEach((l) => {
+    const { score: linkScore } = scoreSingleLink(l.href, new URL(context.url).hostname);
+    riskMap[l.href] = Math.max(linkScore, pageScore);
+  });
 
-  console.log(`[ScamShield] Page score: ${pageScore}, verdict: ${result.verdict}`);
+  console.log(`[ScamShield] Page score: ${pageScore}, verdict: ${verdict}`);
 
-  // Send to content script
   if (tabId) {
     chrome.tabs.sendMessage(tabId, { type: "RISK_SCORES", riskMap }).catch(() => {});
     chrome.tabs.sendMessage(tabId, {
       type: "PAGE_VERDICT",
       score: pageScore,
-      verdict: result.verdict,
-      reasons: result.reasons,
+      verdict,
+      reasons,
     }).catch(() => {});
   }
 
-  if (pageScore >= 30 && result.explanation && tabId) {
+  if (pageScore >= 20 && explanation && tabId) {
     chrome.tabs.sendMessage(tabId, {
       type: "PAGE_EXPLANATION",
       score: pageScore,
-      explanation: result.explanation,
+      explanation,
       signals: signals.slice(0, 3),
     }).catch(() => {});
   }
 
-  // Store for sidebar
   chrome.storage.session.set({
     lastScan: {
       url: context.url,
       score: pageScore,
-      verdict: result.verdict,
-      reasons: result.reasons,
-      explanation: result.explanation,
+      verdict,
+      reasons,
+      explanation,
       timestamp: Date.now(),
     },
   });

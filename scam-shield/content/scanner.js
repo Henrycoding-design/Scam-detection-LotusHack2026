@@ -112,7 +112,7 @@ const ScamShieldScanner = (() => {
 
         // Check the local risk map synchronously
         const score = localRiskMap[href];
-        if (score >= 70) {
+        if (score >= 50) {
           e.preventDefault();
           e.stopPropagation(); // Stop other click handlers
           showWarningOverlay(anchor, href, score);
