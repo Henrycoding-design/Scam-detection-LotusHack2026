@@ -77,7 +77,7 @@ const ScamShieldScanner = (() => {
 
   function extractAll() {
     const els = [];
-    document.querySelectorAll(SELECTOR).forEach(el => { processedNodes.add(el); els.push(...extractSingle(el)); });
+    document.querySelectorAll(SELECTOR).forEach(el => { processedNodes.add(el); for (const e of extractSingle(el)) if (e.isVisible) els.push(e); });
     return els;
   }
 
@@ -86,8 +86,8 @@ const ScamShieldScanner = (() => {
     for (const n of nodes) {
       if (n.nodeType !== Node.ELEMENT_NODE || processedNodes.has(n)) continue;
       processedNodes.add(n);
-      els.push(...extractSingle(n));
-      if (n.querySelectorAll) n.querySelectorAll(SELECTOR).forEach(c => { if (!processedNodes.has(c)) { processedNodes.add(c); els.push(...extractSingle(c)); } });
+      for (const e of extractSingle(n)) if (e.isVisible) els.push(e);
+      if (n.querySelectorAll) n.querySelectorAll(SELECTOR).forEach(c => { if (!processedNodes.has(c)) { processedNodes.add(c); for (const e of extractSingle(c)) if (e.isVisible) els.push(e); } });
     }
     return els;
   }
@@ -178,10 +178,7 @@ const ScamShieldScanner = (() => {
             if (newText.length > 20) analyzeText(newText);
           }
           if (newEls.length) {
-            const vis = [], off = [];
-            for (const el of newEls) (el.isVisible ? vis : off).push(el);
-            if (vis.length) sendToBackground({ type: "NEW_ELEMENTS", elements: vis, priority: "high" });
-            if (off.length) sendToBackground({ type: "NEW_ELEMENTS", elements: off, priority: "low" });
+            sendToBackground({ type: "NEW_ELEMENTS", elements: newEls, priority: "high" });
           }
         }
         // Clean up bubbles and risk map for removed elements
